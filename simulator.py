@@ -38,15 +38,17 @@ arg_group = parser.add_argument_group('Simulator parameters')
 arg_group.add_argument("-c", "--configuration-file", type=str, help="config file of the SUMO scenario", metavar="FILE",
                        required=True)
 arg_group.add_argument("-D", "--demo", action="store_true", help="run SUMO indefinitely")
+arg_group.add_argument("-g", "--gui", action="store_true", help="run simulation with SUMO GUI")
 arg_group.add_argument("-m", "--max-step", default=6000, type=int, help="max simulation step for SUMO")
 args = parser.parse_args()
 
 
 def main():
-    start_sumo(args.configuration_file, False)
+    sumo_binary = "sumo-gui" if args.gui else "sumo"
+    start_sumo(sumo_binary, args.configuration_file, False)
     step = 0
 
-    while running(args.demo_mode, step, args.max_step):
+    while running(args.demo, step, args.max_step):
         traci.simulationStep()
         step += 1
 

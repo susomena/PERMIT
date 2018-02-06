@@ -1,5 +1,7 @@
+# -*- coding: utf-8 -*-
 #
 # Copyright (c) 2017 Michele Segata <segata@ccs-labs.org>
+# Copyright (c) 2018 Jesús Mena-Oreja <jmena@umh.es>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -138,7 +140,7 @@ def communicate(topology):
         set_par(vid, cc.PAR_FRONT_FAKE_DATA, cc.pack(f_v, f_u, f_d))
 
 
-def start_sumo(config_file, already_running):
+def start_sumo(sumo_binary, config_file, already_running):
     """
     Starts or restarts sumo with the given configuration file
     :param config_file: sumo configuration file
@@ -146,7 +148,7 @@ def start_sumo(config_file, already_running):
     the given config file, otherwise sumo is started from scratch
     """
     arguments = ["-c"]
-    sumo_cmd = [sumolib.checkBinary('sumo-gui')]
+    sumo_cmd = [sumolib.checkBinary(sumo_binary)]
     arguments.append(config_file)
     if already_running:
         traci.load(arguments)
