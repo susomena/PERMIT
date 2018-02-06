@@ -19,6 +19,7 @@
 import os
 import sys
 import argparse
+from formatter import CustomFormatter
 import ccparams as cc
 from utils import set_par, change_lane, communicate, get_distance, get_par, start_sumo, running
 
@@ -31,7 +32,8 @@ else:
 import sumolib
 import traci
 
-parser = argparse.ArgumentParser(description="Platooning simulator for adding autonomous mobility on SUMO scenarios")
+parser = argparse.ArgumentParser(description="Platooning simulator for adding autonomous mobility on SUMO scenarios",
+                                 formatter_class=CustomFormatter)
 arg_group = parser.add_argument_group('Simulator parameters')
 arg_group.add_argument("-c", "--configuration-file", type=str, help="config file of the SUMO scenario", metavar="FILE",
                        required=True)
