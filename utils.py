@@ -171,5 +171,7 @@ def running(demo_mode, step, max_step):
     """
     if demo_mode:
         return True
+    elif max_step == 0:  # if max_steps is 0 run simulation until all vehicles have arrived
+        return traci.simulation.getMinExpectedNumber() > 0
     else:
         return step <= max_step
