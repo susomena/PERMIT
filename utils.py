@@ -143,6 +143,8 @@ def communicate(topology):
 def start_sumo(sumo_binary, config_file, already_running):
     """
     Starts or restarts sumo with the given configuration file
+    :param sumo_binary: SUMO binary to be called from command line (sumo or
+    sumo-gui)
     :param config_file: sumo configuration file
     :param already_running: if set to true then the command simply reloads
     the given config file, otherwise sumo is started from scratch
