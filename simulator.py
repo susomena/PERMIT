@@ -21,7 +21,7 @@ import sys
 import argparse
 from formatter import CustomFormatter
 import ccparams as cc
-from utils import set_par, change_lane, communicate, get_distance, get_par, start_sumo, running
+import utils
 
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -45,10 +45,10 @@ args = parser.parse_args()
 
 def main():
     sumo_binary = "sumo-gui" if args.gui else "sumo"
-    start_sumo(sumo_binary, args.configuration_file, False)
+    utils.start_sumo(sumo_binary, args.configuration_file, False)
     step = 0
 
-    while running(args.demo, step, args.max_step):
+    while utils.running(args.demo, step, args.max_step):
         traci.simulationStep()
         step += 1
 
