@@ -102,16 +102,18 @@ def add_vehicle(vid, position, lane, speed, cacc_spacing, real_engine=False):
 
 def get_distance(v1, v2):
     """
-    Returns the distance between two vehicles, removing the length
+    Returns the distance between two vehicles, removing the mean length
     :param v1: id of first vehicle
     :param v2: id of the second vehicle
     :return: distance between v1 and v2
     """
     v_data = get_par(v1, cc.PAR_SPEED_AND_ACCELERATION)
     (v, a, u, x1, y1, t) = cc.unpack(v_data)
+    l1 = traci.vehicle.getLength(v1)
     v_data = get_par(v2, cc.PAR_SPEED_AND_ACCELERATION)
     (v, a, u, x2, y2, t) = cc.unpack(v_data)
-    return math.sqrt((x1 - x2)**2 + (y1 - y2)**2) - 4
+    l2 = traci.vehicle.getLength(v2)
+    return math.sqrt((x1 - x2)**2 + (y1 - y2)**2) - (l1 + l2) / 2
 
 
 def communicate(topology):
