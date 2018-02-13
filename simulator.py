@@ -40,16 +40,27 @@ arg_group.add_argument("-c", "--configuration-file", type=str, help="config file
 arg_group.add_argument("-D", "--demo", action="store_true", help="run SUMO indefinitely")
 arg_group.add_argument("-g", "--gui", action="store_true", help="run simulation with SUMO GUI")
 arg_group.add_argument("-m", "--max-step", default=0, type=int, help="max simulation step for SUMO")
+arg_group.add_argument("-ef", "--edge-filter", type=str,
+                       help="list of edges where platooning is allowed (empty list means it is allowed everywhere)",
+                       nargs="*", metavar=("EDGE 1", "EDGE 2"))
+arg_group.add_argument("-vf", "--vtype-filter", type=str,
+                       help="list of CACC enabled vehicle types (empty list means every vehicle type is CACC enabled)",
+                       nargs="*", metavar=("VTYPE 1", "VTYPE 2"))
 args = parser.parse_args()
 
 
 def main():
     sumo_binary = "sumo-gui" if args.gui else "sumo"
     utils.start_sumo(sumo_binary, args.configuration_file, False)
+    edge_filter, vtype_filter = utils.validate_params(args.edge_filter, args.vtype_filter)
     step = 0
 
     while utils.running(args.demo, step, args.max_step):
         traci.simulationStep()
+
+        vehicles = utils.retrieve_vehicles(edge_filter)
+        cacc_vehicles = utils.filter_cacc_vehicles(vehicles, vtype_filter)
+
         step += 1
 
     traci.close()

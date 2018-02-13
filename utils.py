@@ -177,3 +177,50 @@ def running(demo_mode, step, max_step):
         return traci.simulation.getMinExpectedNumber() > 0
     else:
         return step <= max_step
+
+
+def validate_params(edge_filter, vtype_filter):
+    """
+    Checks if edge-filter and vtype-filter command line arguments are valid and
+    in case of empty lists turns them into the full list of edges and vTypes
+    :param edge_filter: list of edges where platooning is allowed (empty list
+    means it is allowed everywhere)
+    :param vtype_filter: list of vehicle types CACC enabled (empty list means
+    every vehicle type is CACC enabled
+    :return: list of selected edges and list of selected vTypes
+    """
+    edges = traci.edge.getIDList()
+    vtypes = traci.vehicletype.getIDList()
+
+    if edge_filter is None:
+        edge_filter = edges
+    else:
+        for edge in edge_filter:
+            assert edge in edges, "%s not found in SUMO network" % edge
+
+    if vtype_filter is None:
+        vtype_filter = vtypes
+    else:
+        for vtype in vtype_filter:
+            assert vtype in vtypes, "%s is not a vType of the simulation" % vtype
+
+    return edge_filter, vtype_filter
+
+
+def retrieve_vehicles(edge_filter):
+    """
+    Returns a list of the vehicles present on the selected edges
+    :param edge_filter: list of edges where platooning is allowed
+    :return: list of the vehicles present on the selected edges
+    """
+    return [vehicle for edge in edge_filter for vehicle in traci.edge.getLastStepVehicleIDs(edge)]
+
+
+def filter_cacc_vehicles(vehicles, vtype_filter):
+    """
+    Returns a list of the CACC enabled vehicles in the vehicles list
+    :param vehicles: list of the simulation vehicles
+    :param vtype_filter: list of vehicle types CACC enabled
+    :return:
+    """
+    return [vehicle for vehicle in vehicles if traci.vehicle.getTypeID(vehicle) in vtype_filter]

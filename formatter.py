@@ -29,18 +29,18 @@ class CustomFormatter(argparse.HelpFormatter):
     https://stackoverflow.com/questions/23936145/python-argparse-help-message-disable-metavar-for-short-options
     """
 
-    def __init__(self, prog, indent_increment=2, max_help_position=45, width=None, min_help_position=39):
+    def __init__(self, prog, indent_increment=2, max_help_position=49, width=None, min_help_position=39):
         super(CustomFormatter, self).__init__(prog, indent_increment, max_help_position, width)
         self._min_help_position = min_help_position
 
     def _format_action(self, action):
         # determine the required width and the entry label
         # help_position = min(self._action_max_length + 2, self._max_help_position)
-        help_position = max(self._action_max_length + 2, self._min_help_position)
+        action_header = self._format_action_invocation(action)
+        help_position = max(len(action_header) + 4, self._min_help_position)
         help_position = min(help_position, self._max_help_position)
         help_width = max(self._width - help_position, 11)
         action_width = help_position - self._current_indent - 2
-        action_header = self._format_action_invocation(action)
 
         # no help; start on same line and add a final newline
         if not action.help:
@@ -68,7 +68,8 @@ class CustomFormatter(argparse.HelpFormatter):
             help_lines = self._split_lines(help_text, help_width)
             parts.append('%*s%s\n' % (indent_first, '', help_lines[0]))
             for line in help_lines[1:]:
-                parts.append('%*s%s\n' % (help_position, '', line))
+                # parts.append('%*s%s\n' % (help_position, '', line))
+                parts.append('%*s%s\n' % (self._min_help_position, '', line))
 
         # or add a newline if the description doesn't end with one
         elif not action_header.endswith('\n'):
