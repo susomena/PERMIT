@@ -16,6 +16,9 @@
 # along with this program.  If not, see http://www.gnu.org/licenses/.
 #
 
+import ccparams as cc
+import utils
+
 
 class Platoon:
 
@@ -26,15 +29,23 @@ class Platoon:
 
     """
 
-    def __init__(self, vehicle):
+    def __init__(self, vehicles):
         """
         Constructor of the Platoon class. Every platoon is initialized with a
-        first vehicle. This is because this simulator considers that every CACC
-        enabled vehicle is already a platoon composed by just one vehicle
-        :param vehicle: the first vehicle that composes the platoon
+        ordered list of vehicles. The first vehicle is the platoon leader and
+        uses an ACC controller, while the followers use a CACC controller. If
+        the vehicles list is composed by just one vehicle then a platoon of one
+        vehicle is created.
+        :param vehicles: list of vehicles that compose the platoon
         """
-        self._topology = {"leader": vehicle}
-        self._members = [vehicle]
+        self._topology = dict()
+        utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
+
+        for i in range(1, len(vehicles)):
+            self._topology[vehicles[i]] = {"leader": vehicles[0], "front": vehicles[i - 1]}
+            utils.set_par(vehicles[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
+
+        self._members = vehicles
 
     def __contains__(self, vehicle):
         return vehicle in self._members

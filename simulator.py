@@ -66,7 +66,7 @@ def main():
 
         for vehicle in cacc_vehicles:
             if not platooning.in_platoon(platoons, vehicle):
-                platoons.append(platooning.Platoon(vehicle))
+                platoons.append(platooning.Platoon([vehicle]))
 
         step += 1
 
