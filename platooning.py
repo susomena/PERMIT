@@ -50,6 +50,30 @@ class Platoon:
     def __contains__(self, vehicle):
         return vehicle in self._members
 
+    def communicate(self):
+        """
+        Performs data transfer between vehicles, i.e., fetching data from
+        leading and front vehicles to feed the CACC algorithm. This function is
+        an adaptation of the original that can be found in the Michele Segata's
+        GitHub repository and in the utils.py file
+        """
+        for vid, links in self._topology.iteritems():
+            # get data about platoon leader
+            leader_data = utils.get_par(links["leader"], cc.PAR_SPEED_AND_ACCELERATION)
+            (l_v, l_a, l_u, l_x, l_y, l_t) = cc.unpack(leader_data)
+            leader_data = cc.pack(l_v, l_u, l_x, l_y, l_t)
+            # get data about front vehicle
+            front_data = utils.get_par(links["front"], cc.PAR_SPEED_AND_ACCELERATION)
+            (f_v, f_a, f_u, f_x, f_y, f_t) = cc.unpack(front_data)
+            front_data = cc.pack(f_v, f_u, f_x, f_y, f_t)
+            # pass leader and front vehicle data to CACC
+            utils.set_par(vid, cc.PAR_LEADER_SPEED_AND_ACCELERATION, leader_data)
+            utils.set_par(vid, cc.PAR_PRECEDING_SPEED_AND_ACCELERATION, front_data)
+            # compute GPS distance and pass it to the fake CACC
+            f_d = utils.get_distance(vid, links["front"])
+            utils.set_par(vid, cc.PAR_LEADER_FAKE_DATA, cc.pack(l_v, l_u))
+            utils.set_par(vid, cc.PAR_FRONT_FAKE_DATA, cc.pack(f_v, f_u, f_d))
+
 
 def in_platoon(platoons, vehicle):
     """
