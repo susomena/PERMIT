@@ -20,6 +20,7 @@ import os
 import sys
 import argparse
 from formatter import CustomFormatter
+import platooning
 import ccparams as cc
 import utils
 
@@ -55,11 +56,17 @@ def main():
     edge_filter, vtype_filter = utils.validate_params(args.edge_filter, args.vtype_filter)
     step = 0
 
+    platoons = []
+
     while utils.running(args.demo, step, args.max_step):
         traci.simulationStep()
 
         vehicles = utils.retrieve_vehicles(edge_filter)
         cacc_vehicles = utils.filter_cacc_vehicles(vehicles, vtype_filter)
+
+        for vehicle in cacc_vehicles:
+            if not platooning.in_platoon(platoons, vehicle):
+                platoons.append(platooning.Platoon(vehicle))
 
         step += 1
 
