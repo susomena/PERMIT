@@ -52,7 +52,11 @@ class Platoon:
         the vehicles list is composed by just one vehicle then a platoon of one
         vehicle is created.
         :param vehicles: list of vehicles that compose the platoon
+        :param cacc_spacing: intra-platoon spacing
         :param merging: whether the new platoon is in a maneuver or not
+        :type vehicles: list[str]
+        :type cacc_spacing: float
+        :type merging: bool
         """
         self._topology = dict()
         self._states = [self.IDLE]
@@ -174,6 +178,7 @@ class Platoon:
         """
         Checks whether all platoon members are idle or not
         :return: True if all the platoon members state is IDLE, False otherwise
+        :rtype: bool
         """
         for state in self._states:
             if state is not self.IDLE:
@@ -195,6 +200,7 @@ class Platoon:
         """
         Returns the CACC spacing of this platoon
         :return: the CACC spacing of this platoon
+        :rtype: float
         """
         return self._cacc_spacing
 
@@ -202,6 +208,7 @@ class Platoon:
         """
         Returns the ID of the platoon leader
         :return: the ID of the platoon leader
+        :rtype: str
         """
         return self._members[0]
 
@@ -209,6 +216,7 @@ class Platoon:
         """
         Return a list of the IDs of the platoon members
         :return: a list of the IDs of the platoon members
+        :rtype: list[str]
         """
         return self._members
 
@@ -216,6 +224,7 @@ class Platoon:
         """
         Return the length of the platoon in vehicles
         :return: length of the platoon in vehicles
+        :rtype: int
         """
         return len(self._members)
 
@@ -225,9 +234,11 @@ class Platoon:
         distance between their leaders
         :param platoon: the platoon with respect to which the distance is
         computed
+        :type platoon: Platoon
         :return: distance between the two platoons. The returned value can be
         negative (and invalid) if the platoon with respect to which the
         distance is computed is placed behind the self platoon
+        :rtype: float
         """
         return distance_between_vehicles(self.get_leader(), platoon.get_leader())
 
@@ -235,6 +246,7 @@ class Platoon:
         """
         Returns whether this platoon is in a maneuver or not
         :return: True if the platoon is in a maneuver, False if not
+        :rtype: bool
         """
         return self._in_maneuver
 
@@ -255,6 +267,7 @@ class Platoon:
         Returns whether this platoon has been selected for a maneuver or not
         :return: True if the platoon has been selected for a maneuver, False if
         not
+        :rtype: bool
         """
         return self._selected_for_maneuver
 
@@ -263,6 +276,7 @@ class Platoon:
         Returns a list containing the edges where all the platoon members are
         placed
         :return: list of edges of the platoon members
+        :rtype: list[str]
         """
         return [traci.vehicle.getRoadID(vehicle) for vehicle in self._members]
 
@@ -271,6 +285,7 @@ class Platoon:
         Returns a list containing the routes of all the platoon members. The
         routes are lists of edges.
         :return: a list of the routes of all the platoon members
+        :rtype: list[list[str]]
         """
         return [traci.vehicle.getRoute(vehicle) for vehicle in self._members]
 
@@ -280,8 +295,11 @@ def in_platoon(platoons, vehicle):
     Checks if a vehicle is a member of any platoon in a list of platoons
     :param platoons: list of platoons
     :param vehicle: vehicle to check if it is a member of a platoon of the list
+    :type platoons: list[Platoon]
+    :type vehicle: str
     :return: True if the vehicle is a member of a platoon of the list, False if
     not.
+    :rtype: bool
     """
     for platoon in platoons:
         if vehicle in platoon:
@@ -295,7 +313,10 @@ def distance_between_vehicles(v1, v2):
     Computes the distance between two vehicles (from v1 to v2)
     :param v1: ID of the first vehicle
     :param v2: ID of the second vehicle
+    :type v1: str
+    :type v2: str
     :return: distance between the two vehicles (from v1 to v2)
+    :rtype: float
     """
     edge = traci.vehicle.getRoadID(v2)
     pos = traci.vehicle.getLanePosition(v2)
@@ -314,7 +335,10 @@ def gap_between_vehicles(v1, v2):
     Computes the gap between two vehicles
     :param v1: ID of the first vehicle
     :param v2: ID of the second vehicle
+    :type v1: str
+    :type v2: str
     :return: gap between the two vehicles
+    :rtype: float
     """
     l1 = traci.vehicle.getLength(v1)
     l2 = traci.vehicle.getLength(v2)
@@ -326,7 +350,9 @@ def first_of(vehicle_list):
     """
     Returns the ID of the first vehicle of the list
     :param vehicle_list: list of vehicles where to look for the first vehicle
+    :type vehicle_list: list[str]
     :return: ID of the first vehicle of the list
+    :rtype: str
     """
     distances = [0]  # Distance between the first vehicle and the first vehicle is zero
 
@@ -342,7 +368,9 @@ def sort_vehicle_list(vehicle_list):
     sorting by distance based on the accepted answer in:
     https://stackoverflow.com/questions/6618515/sorting-list-based-on-values-from-another-list
     :param vehicle_list: the vehicle list to be sorted
+    :type vehicle_list: list[str]
     :return: sorted vehicle list
+    :rtype: list[str]
     """
     distances = [0]  # Distance between the first vehicle and the first vehicle is zero
 
@@ -358,7 +386,10 @@ def merge_platoons(p1, p2):
     maneuver, which is managed by the new Platoon object
     :param p1: one of the platoons that merge
     :param p2: the other platoon that merge
+    :type p1: Platoon
+    :type p2: Platoon
     :return: the new platoon
+    :rtype: Platoon
     """
     p1.deselect_for_maneuver()
     p2.deselect_for_maneuver()
@@ -377,8 +408,11 @@ def all_edges_in_all_routes(edges, routes):
     edges
     :param edges: list of edges to check
     :param routes: list of routes to check
+    :type edges: list[str]
+    :type routes: list[list[str]]
     :return: True if all edges of the edges list are contained in the routes
     list
+    :rtype: bool
     """
     for route in routes:
         for edge in edges:
@@ -396,8 +430,12 @@ def look_for_merges(platoons, max_distance, max_platoon_length):
     :param platoons: list of platoons of the simulation
     :param max_distance: maximum distance to check for platoons that can merge
     :param max_platoon_length: maximum platoon length allowed in vehicles
-    :return: an array of indexes of platoons to merge, with -1 meaning that
+    :type platoons: list[Platoon]
+    :type max_distance: float
+    :type max_platoon_length: int
+    :return: an list of indexes of platoons to merge, with -1 meaning that
     there is no merge for a platoon
+    :rtype: list[int]
     """
     merges = [-1] * len(platoons)
 
@@ -445,7 +483,11 @@ def it_is_safe_to_change_lane(vehicle, lane_id, safe_gap):
     :param vehicle: ID of the vehicle that wants to change lane
     :param lane_id: ID of the destination lane
     :param safe_gap: minimum gap to consider that the lane change is safe
+    :type vehicle: str
+    :type lane_id: str
+    :type safe_gap: float
     :return: True if it is safe to change lane, False otherwise
+    :rtype: bool
     """
     vehicles_in_lane = traci.lane.getLastStepVehicleIDs(lane_id)
 
@@ -461,6 +503,9 @@ def already_in_lane(vehicle, lane):
     Checks whether a vehicle is already in a lane
     :param vehicle: ID of the vehicle to check
     :param lane: index of the lane to check
+    :type vehicle: str
+    :type lane: int
     :return: True if the vehicle is already in the lane, False otherwise
+    :rtype: bool
     """
     return True if traci.vehicle.getLaneIndex(vehicle) is lane else False

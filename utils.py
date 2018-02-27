@@ -47,6 +47,8 @@ def set_par(vid, par, value):
     :param vid: vehicle id
     :param par: parameter name
     :param value: numeric or string value for the parameter
+    :type vid: str
+    :type par: str
     """
     traci.vehicle.setParameter(vid, "carFollowModel.%s" % par, str(value))
 
@@ -56,6 +58,8 @@ def get_par(vid, par):
     Shorthand for the getParameter method
     :param vid: vehicle id
     :param par: parameter name
+    :type vid: str
+    :type par: str
     :return: the parameter value
     """
     return traci.vehicle.getParameter(vid, "carFollowModel.%s" % par)
@@ -66,6 +70,8 @@ def change_lane(vid, lane):
     Let a vehicle change lane without respecting any safety distance
     :param vid: vehicle id
     :param lane: lane index
+    :type vid: str
+    :type lane: int
     """
     traci.vehicle.setLaneChangeMode(vid, FIX_LC)
     traci.vehicle.changeLane(vid, lane, 1000000)
@@ -81,6 +87,12 @@ def add_vehicle(vid, position, lane, speed, cacc_spacing, real_engine=False):
     :param cacc_spacing: spacing to be set for the CACC
     :param real_engine: use the realistic engine model or the first order lag
     model
+    :type vid: str
+    :type position: float
+    :type lane: int
+    :type speed: float
+    :type cacc_spacing: float
+    :type real_engine: bool
     """
     traci.vehicle.add(vid, "platoon_route",
                       pos=position, speed=speed, lane=lane,
@@ -105,7 +117,10 @@ def get_distance(v1, v2):
     Returns the distance between two vehicles, removing the mean length
     :param v1: id of first vehicle
     :param v2: id of the second vehicle
+    :type v1: str
+    :type v2: str
     :return: distance between v1 and v2
+    :rtype: float
     """
     v_data = get_par(v1, cc.PAR_SPEED_AND_ACCELERATION)
     (v, a, u, x1, y1, t) = cc.unpack(v_data)
@@ -121,8 +136,9 @@ def communicate(topology):
     Performs data transfer between vehicles, i.e., fetching data from
     leading and front vehicles to feed the CACC algorithm
     :param topology: a dictionary pointing each vehicle id to its front
-    vehicle and platoon leader. each entry of the dictionary is a dictionary
+    vehicle and platoon leader. Each entry of the dictionary is a dictionary
     which includes the keys "leader" and "front"
+    :type topology: dict[str, dict[str, str]]
     """
     for vid, links in topology.iteritems():
         # get data about platoon leader
@@ -150,6 +166,9 @@ def start_sumo(sumo_binary, config_file, already_running):
     :param config_file: sumo configuration file
     :param already_running: if set to true then the command simply reloads
     the given config file, otherwise sumo is started from scratch
+    :type sumo_binary: str
+    :type config_file: str
+    :type already_running: bool
     """
     arguments = ["-c"]
     sumo_cmd = [sumolib.checkBinary(sumo_binary)]
@@ -169,7 +188,11 @@ def running(demo_mode, step, max_step):
     :param demo_mode: true if running in demo mode
     :param step: current simulation step
     :param max_step: maximum simulation step
+    :type demo_mode: bool
+    :type step: int
+    :type max_step: int
     :return: true if the simulation should continue
+    :rtype: bool
     """
     if demo_mode:
         return True
@@ -187,7 +210,10 @@ def validate_params(edge_filter, vtype_filter):
     means it is allowed everywhere)
     :param vtype_filter: list of vehicle types CACC enabled (empty list means
     every vehicle type is CACC enabled
+    :type edge_filter: list[str]
+    :type vtype_filter: list[str]
     :return: list of selected edges and list of selected vTypes
+    :rtype: (list[str], list[str])
     """
     edges = traci.edge.getIDList()
     vtypes = traci.vehicletype.getIDList()
@@ -211,7 +237,9 @@ def retrieve_vehicles(edge_filter):
     """
     Returns a list of the vehicles present on the selected edges
     :param edge_filter: list of edges where platooning is allowed
+    :type edge_filter: list[str]
     :return: list of the vehicles present on the selected edges
+    :rtype: list[str]
     """
     return [vehicle for edge in edge_filter for vehicle in traci.edge.getLastStepVehicleIDs(edge)]
 
@@ -221,6 +249,8 @@ def filter_cacc_vehicles(vehicles, vtype_filter):
     Returns a list of the CACC enabled vehicles in the vehicles list
     :param vehicles: list of the simulation vehicles
     :param vtype_filter: list of vehicle types CACC enabled
-    :return:
+    :type vehicles: list[str]
+    :return: list of vehicles CACC enabled present in the list vehicles
+    :rtype: list[str]
     """
     return [vehicle for vehicle in vehicles if traci.vehicle.getTypeID(vehicle) in vtype_filter]
