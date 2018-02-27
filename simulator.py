@@ -47,6 +47,9 @@ arg_group.add_argument("-ef", "--edge-filter", type=str,
 arg_group.add_argument("-vf", "--vtype-filter", type=str,
                        help="list of CACC enabled vehicle types (empty list means every vehicle type is CACC enabled)",
                        nargs="*", metavar=("VTYPE 1", "VTYPE 2"))
+arg_group.add_argument("-md", "--max-distance", default=100.0, type=float, help="maximum distance for platoon merge")
+arg_group.add_argument("-cs", "--cacc-spacing", default=5.0, type=float, help="intra-platoon spacing")
+arg_group.add_argument("-pl", "--platoon-length", default=8, type=int, help="max platoon length in vehicles")
 args = parser.parse_args()
 
 
@@ -66,7 +69,20 @@ def main():
 
         for vehicle in cacc_vehicles:
             if not platooning.in_platoon(platoons, vehicle):
-                platoons.append(platooning.Platoon([vehicle]))
+                platoons.append(platooning.Platoon([vehicle], cacc_spacing=args.cacc_spacing))
+
+        merges = platooning.look_for_merges(platoons, max_distance=args.max_distance,
+                                            max_platoon_length=args.platoon_length)
+
+        for i in range(len(merges)):
+            if merges[i] != -1:
+                platoons.append(platooning.merge_platoons(platoons[i], platoons[merges[i]]))
+                platoons = [e for e in platoons if e not in {platoons[i], platoons[merges[i]]}]
+
+        for platoon in platoons:
+            platoon.update_desired_speed()
+            platoon.communicate()
+            platoon.maneuver()
 
         step += 1
 

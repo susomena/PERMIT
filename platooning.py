@@ -16,8 +16,17 @@
 # along with this program.  If not, see http://www.gnu.org/licenses/.
 #
 
+import os
+import sys
 import ccparams as cc
 import utils
+if 'SUMO_HOME' in os.environ:
+    tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
+    sys.path.append(tools)
+else:
+    sys.exit("please declare environment variable 'SUMO_HOME'")
+
+import traci
 
 
 class Platoon:
@@ -29,7 +38,13 @@ class Platoon:
 
     """
 
-    def __init__(self, vehicles):
+    # Maneuver states
+    IDLE = 0
+    GOING_TO_POSITION = 1
+    CHANGING_LANE = 2
+    CLOSING_GAP = 3
+
+    def __init__(self, vehicles, cacc_spacing, merging=False):
         """
         Constructor of the Platoon class. Every platoon is initialized with a
         ordered list of vehicles. The first vehicle is the platoon leader and
@@ -37,18 +52,56 @@ class Platoon:
         the vehicles list is composed by just one vehicle then a platoon of one
         vehicle is created.
         :param vehicles: list of vehicles that compose the platoon
+        :param merging: whether the new platoon is in a maneuver or not
         """
         self._topology = dict()
+        self._states = [self.IDLE]
+        traci.vehicle.setLaneChangeMode(vehicles[0], utils.FIX_LC)
         utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
 
+        lanes = [traci.vehicle.getLaneIndex(vehicles[0])]
+        lane_ids = [traci.vehicle.getLaneID(vehicles[0])]
+
         for i in range(1, len(vehicles)):
+            traci.vehicle.setLaneChangeMode(vehicles[i], utils.FIX_LC)
             self._topology[vehicles[i]] = {"leader": vehicles[0], "front": vehicles[i - 1]}
-            utils.set_par(vehicles[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
+            self._states.append(self.GOING_TO_POSITION)
+            traci.vehicle.setSpeedFactor(vehicles[i], 1.05)
+
+            lanes.append(traci.vehicle.getLaneIndex(vehicles[i]))
+            lane_ids.append(traci.vehicle.getLaneID(vehicles[i]))
 
         self._members = vehicles
+        self._cacc_spacing = cacc_spacing
+        self._merging = merging
+        self._in_maneuver = True if merging else False
+        self._splitting = False
+        self._selected_for_maneuver = False
+
+        leader_max_speed = traci.vehicle.getAllowedSpeed(vehicles[0])
+        lane = traci.vehicle.getLaneID(vehicles[0])
+        road_max_speed = traci.lane.getMaxSpeed(lane)
+        # If the platoon is fast enough merge all vehicles to the leftmost
+        # lane, else merge to the rightmost lane
+        self._desired_lane = max(lanes) if leader_max_speed > 0.9 * road_max_speed else min(lanes)
+        self._desired_lane_id = lane_ids[lanes.index(self._desired_lane)]
 
     def __contains__(self, vehicle):
         return vehicle in self._members
+
+    def update_desired_speed(self):
+        """
+        The ACC and CACC of Plexe SUMO seem to limit the desired speed
+        automatically to 13.9m/s, so this function should be called at every
+        time step to ensure that the maximum speed is updated after every edge
+        change
+        """
+        for vehicle in self._members:
+            # getAllowedSpeed() also includes the speed factor
+            lane_max_speed = traci.vehicle.getAllowedSpeed(vehicle)
+            vehicle_max_speed = traci.vehicle.getMaxSpeed(vehicle)
+            desired_speed = min(lane_max_speed, vehicle_max_speed)
+            utils.set_par(vehicle, cc.PAR_CC_DESIRED_SPEED, desired_speed)
 
     def communicate(self):
         """
@@ -74,6 +127,153 @@ class Platoon:
             utils.set_par(vid, cc.PAR_LEADER_FAKE_DATA, cc.pack(l_v, l_u))
             utils.set_par(vid, cc.PAR_FRONT_FAKE_DATA, cc.pack(f_v, f_u, f_d))
 
+    def merge(self):
+        """
+        Executes the merge maneuver finite state machine of every vehicle of
+        the platoon
+        """
+        if it_is_safe_to_change_lane(self._members[0], self._desired_lane_id, self._cacc_spacing * 1.5 - 1):
+            utils.change_lane(self._members[0], self._desired_lane)
+
+        for i in range(1, len(self._members)):
+            if self._states[i] is self.GOING_TO_POSITION:
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                if self._cacc_spacing * 1.5 - 1 < front_distance < self._cacc_spacing * 1.5 + 1:
+                    self._states[i] = self.CHANGING_LANE
+                else:
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.5)
+
+            if self._states[i] is self.CHANGING_LANE:
+                if it_is_safe_to_change_lane(self._members[i], self._desired_lane_id, self._cacc_spacing * 1.5 - 1)\
+                        or already_in_lane(self._members[i], self._desired_lane):
+                    utils.change_lane(self._members[i], self._desired_lane)
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
+                    min_gap = traci.vehicle.getMinGap(self._members[i])
+                    # The CACC controller tries to keep (cacc_spacing + min_gap)
+                    # meters as intra-platoon spacing
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing - min_gap)
+                    self._states[i] = self.CLOSING_GAP
+
+            if self._states[i] is self.CLOSING_GAP:
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                if self._cacc_spacing - 1 < front_distance < self._cacc_spacing + 1:
+                    self._states[i] = self.IDLE
+
+        if self.all_members_are_idle():
+            self._merging = False
+            self._in_maneuver = False
+
+    def split(self):
+        """
+        Executes the split maneuver
+        """
+        # TODO implement split function
+
+    def all_members_are_idle(self):
+        """
+        Checks whether all platoon members are idle or not
+        :return: True if all the platoon members state is IDLE, False otherwise
+        """
+        for state in self._states:
+            if state is not self.IDLE:
+                return False
+
+        return True
+
+    def maneuver(self):
+        """
+        Checks and executes the maneuver of the current time step. This
+        function gives splitting priority over merging
+        """
+        if self._splitting:
+            self.split()
+        elif self._merging:
+            self.merge()
+
+    def get_cacc_spacing(self):
+        """
+        Returns the CACC spacing of this platoon
+        :return: the CACC spacing of this platoon
+        """
+        return self._cacc_spacing
+
+    def get_leader(self):
+        """
+        Returns the ID of the platoon leader
+        :return: the ID of the platoon leader
+        """
+        return self._members[0]
+
+    def get_members(self):
+        """
+        Return a list of the IDs of the platoon members
+        :return: a list of the IDs of the platoon members
+        """
+        return self._members
+
+    def length(self):
+        """
+        Return the length of the platoon in vehicles
+        :return: length of the platoon in vehicles
+        """
+        return len(self._members)
+
+    def distance_to(self, platoon):
+        """
+        Computes the distance between the platoon and another platoon as the
+        distance between their leaders
+        :param platoon: the platoon with respect to which the distance is
+        computed
+        :return: distance between the two platoons. The returned value can be
+        negative (and invalid) if the platoon with respect to which the
+        distance is computed is placed behind the self platoon
+        """
+        return distance_between_vehicles(self.get_leader(), platoon.get_leader())
+
+    def is_in_maneuver(self):
+        """
+        Returns whether this platoon is in a maneuver or not
+        :return: True if the platoon is in a maneuver, False if not
+        """
+        return self._in_maneuver
+
+    def select_for_maneuver(self):
+        """
+        Sets the platoon selected for maneuver
+        """
+        self._selected_for_maneuver = True
+
+    def deselect_for_maneuver(self):
+        """
+        Sets the platoon not selected for maneuver
+        """
+        self._selected_for_maneuver = False
+
+    def is_selected_for_maneuver(self):
+        """
+        Returns whether this platoon has been selected for a maneuver or not
+        :return: True if the platoon has been selected for a maneuver, False if
+        not
+        """
+        return self._selected_for_maneuver
+
+    def get_edges_list(self):
+        """
+        Returns a list containing the edges where all the platoon members are
+        placed
+        :return: list of edges of the platoon members
+        """
+        return [traci.vehicle.getRoadID(vehicle) for vehicle in self._members]
+
+    def get_routes_list(self):
+        """
+        Returns a list containing the routes of all the platoon members. The
+        routes are lists of edges.
+        :return: a list of the routes of all the platoon members
+        """
+        return [traci.vehicle.getRoute(vehicle) for vehicle in self._members]
+
 
 def in_platoon(platoons, vehicle):
     """
@@ -88,3 +288,179 @@ def in_platoon(platoons, vehicle):
             return True
 
     return False
+
+
+def distance_between_vehicles(v1, v2):
+    """
+    Computes the distance between two vehicles (from v1 to v2)
+    :param v1: ID of the first vehicle
+    :param v2: ID of the second vehicle
+    :return: distance between the two vehicles (from v1 to v2)
+    """
+    edge = traci.vehicle.getRoadID(v2)
+    pos = traci.vehicle.getLanePosition(v2)
+    lane = traci.vehicle.getLaneIndex(v2)
+    distance = traci.vehicle.getDrivingDistance(v1, edge, pos, lane)
+
+    # Since getDrivingDistance can return a negative and invalid distance when
+    # computing the distance to a vehicle that is placed behind, we compute the
+    # distance in both directions to use the valid distance (which will be the
+    # positive and valid one) and multiply the distance to a rear vehicle by -1
+    return distance if distance >= 0 else -distance_between_vehicles(v2, v1)
+
+
+def gap_between_vehicles(v1, v2):
+    """
+    Computes the gap between two vehicles
+    :param v1: ID of the first vehicle
+    :param v2: ID of the second vehicle
+    :return: gap between the two vehicles
+    """
+    l1 = traci.vehicle.getLength(v1)
+    l2 = traci.vehicle.getLength(v2)
+
+    return abs(distance_between_vehicles(v1, v2)) - (l1 + l2) / 2
+
+
+def first_of(vehicle_list):
+    """
+    Returns the ID of the first vehicle of the list
+    :param vehicle_list: list of vehicles where to look for the first vehicle
+    :return: ID of the first vehicle of the list
+    """
+    distances = [0]  # Distance between the first vehicle and the first vehicle is zero
+
+    for i in range(1, len(vehicle_list)):
+        distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0]))
+
+    return vehicle_list[distances.index(min(distances))]
+
+
+def sort_vehicle_list(vehicle_list):
+    """
+    Returns the vehicle list used as argument sorted by distance. Vehicle
+    sorting by distance based on the accepted answer in:
+    https://stackoverflow.com/questions/6618515/sorting-list-based-on-values-from-another-list
+    :param vehicle_list: the vehicle list to be sorted
+    :return: sorted vehicle list
+    """
+    distances = [0]  # Distance between the first vehicle and the first vehicle is zero
+
+    for i in range(1, len(vehicle_list)):
+        distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0]))
+
+    return [vehicle for _, vehicle in sorted(zip(distances, vehicle_list))]
+
+
+def merge_platoons(p1, p2):
+    """
+    Creates a new platoon from the two that merge and starts its merge
+    maneuver, which is managed by the new Platoon object
+    :param p1: one of the platoons that merge
+    :param p2: the other platoon that merge
+    :return: the new platoon
+    """
+    p1.deselect_for_maneuver()
+    p2.deselect_for_maneuver()
+
+    vehicle_list = []
+    vehicle_list.extend(p1.get_members())
+    vehicle_list.extend(p2.get_members())
+
+    return Platoon(sort_vehicle_list(vehicle_list), cacc_spacing=p1.get_cacc_spacing(), merging=True)
+
+
+def all_edges_in_all_routes(edges, routes):
+    """
+    Checks if all the edges contained in the edges list are contained in all
+    the routes of the routes list. The routes of the routes list are list of
+    edges
+    :param edges: list of edges to check
+    :param routes: list of routes to check
+    :return: True if all edges of the edges list are contained in the routes
+    list
+    """
+    for route in routes:
+        for edge in edges:
+            if edge not in route:
+                return False
+
+    return True
+
+
+def look_for_merges(platoons, max_distance, max_platoon_length):
+    """
+    Checks for the nearest platoon that can merge with each platoon. The merge
+    candidate platoons are those that are closer than a maximum distance and
+    placed on edges that are in the route of the platoon looking for a merge
+    :param platoons: list of platoons of the simulation
+    :param max_distance: maximum distance to check for platoons that can merge
+    :param max_platoon_length: maximum platoon length allowed in vehicles
+    :return: an array of indexes of platoons to merge, with -1 meaning that
+    there is no merge for a platoon
+    """
+    merges = [-1] * len(platoons)
+
+    for i in range(len(platoons) - 1):
+        if platoons[i].is_selected_for_maneuver() or platoons[i].is_in_maneuver():
+            continue
+
+        min_distance = max_distance
+        index = -1
+        l1 = platoons[i].length()
+        # route_edges = traci.vehicle.getRoute(platoons[i].get_leader())
+        routes = platoons[i].get_routes_list()
+
+        for j in range(i + 1, len(platoons)):
+            l2 = platoons[j].length()
+            if platoons[j].is_selected_for_maneuver() or platoons[j].is_in_maneuver() or l1 + l2 > max_platoon_length:
+                continue
+
+            # neighbor_edge = traci.vehicle.getRoadID(platoons[j].get_leader())
+            neighbor_edges_list = platoons[j].get_edges_list()
+
+            if all_edges_in_all_routes(neighbor_edges_list, routes):
+                distance = abs(platoons[i].distance_to(platoons[j]))
+                if distance < min_distance:
+                    min_distance = distance
+                    index = j
+
+            """if neighbor_edge in route_edges:
+                distance = abs(platoons[i].distance_to(platoons[j]))
+                if distance < min_distance:
+                    min_distance = distance
+                    index = j"""
+
+        if index != -1:
+            platoons[i].select_for_maneuver()
+            platoons[index].select_for_maneuver()
+            merges[i] = index
+
+    return merges
+
+
+def it_is_safe_to_change_lane(vehicle, lane_id, safe_gap):
+    """
+    Checks whether it is safe or not for a vehicle to change to a lane
+    :param vehicle: ID of the vehicle that wants to change lane
+    :param lane_id: ID of the destination lane
+    :param safe_gap: minimum gap to consider that the lane change is safe
+    :return: True if it is safe to change lane, False otherwise
+    """
+    vehicles_in_lane = traci.lane.getLastStepVehicleIDs(lane_id)
+
+    for v in vehicles_in_lane:
+        if gap_between_vehicles(vehicle, v) < safe_gap:
+            return False
+
+    return True
+
+
+def already_in_lane(vehicle, lane):
+    """
+    Checks whether a vehicle is already in a lane
+    :param vehicle: ID of the vehicle to check
+    :param lane: index of the lane to check
+    :return: True if the vehicle is already in the lane, False otherwise
+    """
+    return True if traci.vehicle.getLaneIndex(vehicle) is lane else False
