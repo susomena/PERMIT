@@ -43,6 +43,9 @@ class Platoon:
     GOING_TO_POSITION = 1
     CHANGING_LANE = 2
     CLOSING_GAP = 3
+    LEAVING = 4
+    OPENING_GAP = 5
+    WAITING = 6
 
     def __init__(self, vehicles, cacc_spacing, merging=False):
         """
@@ -80,6 +83,7 @@ class Platoon:
         self._merging = merging
         self._in_maneuver = True if merging else False
         self._splitting = False
+        self._vehicles_splitting = [False] * len(vehicles)
         self._selected_for_maneuver = False
 
         leader_max_speed = traci.vehicle.getAllowedSpeed(vehicles[0])
@@ -131,6 +135,34 @@ class Platoon:
             utils.set_par(vid, cc.PAR_LEADER_FAKE_DATA, cc.pack(l_v, l_u))
             utils.set_par(vid, cc.PAR_FRONT_FAKE_DATA, cc.pack(f_v, f_u, f_d))
 
+    def look_for_splits(self):
+        """
+        Checks if any vehicle of the platoon wants to leave and prepares the
+        platoon for the maneuver in that case
+        """
+        for i in range(len(self._members)):
+            edge = traci.vehicle.getRoadID(self._members[i])
+            # If vehicle is in an internal edge don't check for splits. If a
+            # split is coming it should have been noted before
+            if edge.startswith(':'):
+                continue
+
+            route = traci.vehicle.getRoute(self._members[i])
+            next_edge = route[route.index(edge) + 1]
+            platoon_route = traci.vehicle.getRoute(self._members[0])
+            next_platoon_edge = platoon_route[platoon_route.index(edge) + 1]
+
+            if next_edge != next_platoon_edge:
+                # TODO Don't hardcode the distance and make it speed dependant
+                if traci.vehicle.getDrivingDistance(self._members[i], next_edge, 0) < 750.0 \
+                        and not self._vehicles_splitting[i]:
+                    self._splitting = True
+                    self._vehicles_splitting[i] = True
+                    self._in_maneuver = True
+                    self._states[i] = self.LEAVING
+                    if i < len(self._states) - 1:
+                        self._states[i + 1] = self.OPENING_GAP
+
     def merge(self):
         """
         Executes the merge maneuver finite state machine of every vehicle of
@@ -170,9 +202,49 @@ class Platoon:
 
     def split(self):
         """
-        Executes the split maneuver
+        Executes the split maneuver finite state machine of every vehicle of
+        the platoon
         """
-        # TODO implement split function
+        for i in range(1, len(self._members)):
+            if self._states[i] is self.LEAVING:
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                if self._cacc_spacing * 1.5 - 1 < front_distance < self._cacc_spacing * 1.5 + 1:
+                    self._states[i] = self.CHANGING_LANE
+                else:
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.5)
+
+            if self._states[i] is self.CHANGING_LANE:
+                desired_lane = self._desired_lane - 1 if self._desired_lane > 1 else 0
+                desired_lane_id = self._desired_lane_id[:-1] + str(desired_lane)
+                if it_is_safe_to_change_lane(self._members[i], desired_lane_id, self._cacc_spacing * 1.5 - 1):
+                    utils.change_lane(self._members[i], desired_lane)
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
+                    traci.vehicle.setSpeedFactor(self._members[i], 1.0)
+
+                    self._states[i] = self.IDLE
+
+            if self._states[i] is self.OPENING_GAP:
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                if self._cacc_spacing * 1.5 - 1 < front_distance < self._cacc_spacing * 1.5 + 1 \
+                        and self._states[i - 1] is self.CHANGING_LANE or self._states[i - 1] is self.IDLE:
+                    self._states[i] = self.WAITING
+                else:
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.5)
+
+            if self._states[i] is self.WAITING:
+                front_vehicle_index = self._members.index(self._topology[self._members[i]]["front"])
+                if self._states[front_vehicle_index] is self.IDLE:
+                    self._topology[self._members[i]]["front"] = self._members[front_vehicle_index - 1]
+                    if not self._vehicles_splitting[front_vehicle_index - 1]:
+                        utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing)
+                        self._states[i] = self.IDLE
+
+        if self.all_members_are_idle():
+            self._splitting = False
+            self._in_maneuver = False
+            remaining_platoon = [self._members[i] for i in range(len(self._members)) if not self._vehicles_splitting[i]]
+            self.__init__(remaining_platoon, self._cacc_spacing, True)
 
     def all_members_are_idle(self):
         """
@@ -355,6 +427,7 @@ def first_of(vehicle_list):
     :rtype: str
     """
     distances = [0]  # Distance between the first vehicle and the first vehicle is zero
+    """:type: list[float]"""
 
     for i in range(1, len(vehicle_list)):
         distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0]))
@@ -373,6 +446,7 @@ def sort_vehicle_list(vehicle_list):
     :rtype: list[str]
     """
     distances = [0]  # Distance between the first vehicle and the first vehicle is zero
+    """:type: list[float]"""
 
     for i in range(1, len(vehicle_list)):
         distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0]))

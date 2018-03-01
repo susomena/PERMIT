@@ -71,6 +71,9 @@ def main():
             if not platooning.in_platoon(platoons, vehicle):
                 platoons.append(platooning.Platoon([vehicle], cacc_spacing=args.cacc_spacing))
 
+        for platoon in platoons:
+            platoon.look_for_splits()
+
         merges = platooning.look_for_merges(platoons, max_distance=args.max_distance,
                                             max_platoon_length=args.platoon_length)
 
