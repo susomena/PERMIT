@@ -65,6 +65,7 @@ class Platoon:
         self._states = [self.IDLE]
         traci.vehicle.setLaneChangeMode(vehicles[0], utils.FIX_LC)
         utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
+        traci.vehicle.setSpeedFactor(vehicles[0], 1)
 
         lanes = [traci.vehicle.getLaneIndex(vehicles[0])]
         lane_ids = [traci.vehicle.getLaneID(vehicles[0])]
@@ -135,6 +136,44 @@ class Platoon:
             utils.set_par(vid, cc.PAR_LEADER_FAKE_DATA, cc.pack(l_v, l_u))
             utils.set_par(vid, cc.PAR_FRONT_FAKE_DATA, cc.pack(f_v, f_u, f_d))
 
+    def leader_wants_to_leave(self, edge_filter):
+        """
+        Checks if the platoon leader is arriving to an edge where platooning is
+        not allowed
+        :param edge_filter: the list of edges where platooning is allowed
+        :type edge_filter: list[str]
+        :return: True if the Platoon leader is arriving to an edge where
+        platooning is not allowed, False otherwise
+        """
+        edge = traci.vehicle.getRoadID(self._members[0])
+        # If vehicle is in an internal edge don't check for leaving. If a leave
+        # is coming it should have been noted before
+        if edge.startswith(':'):
+            return False
+
+        route = traci.vehicle.getRoute(self._members[0])
+
+        if route.index(edge) == len(route) - 1:
+            return True
+
+        next_edge = route[route.index(edge) + 1]
+
+        if next_edge not in edge_filter:
+            # TODO Don't hardcode the distance and make it speed dependant
+            if traci.vehicle.getDrivingDistance(self._members[0], next_edge, 0) < 750.0:
+                return True
+
+        return False
+
+    def leader_leave(self):
+        """
+        Creates a new platoon with all the vehicles of the platoon except for
+        the former leader
+        """
+        if len(self._members) != 1:
+            traci.vehicle.setLaneChangeMode(self._members[0], utils.DEFAULT_LC)
+            self.__init__(self._members[1:], self._cacc_spacing)
+
     def look_for_splits(self):
         """
         Checks if any vehicle of the platoon wants to leave and prepares the
@@ -148,6 +187,10 @@ class Platoon:
                 continue
 
             route = traci.vehicle.getRoute(self._members[i])
+
+            if route.index(edge) == len(route) - 1:
+                continue
+
             next_edge = route[route.index(edge) + 1]
             platoon_route = traci.vehicle.getRoute(self._members[0])
             next_platoon_edge = platoon_route[platoon_route.index(edge) + 1]
@@ -496,7 +539,7 @@ def all_edges_in_all_routes(edges, routes):
     return True
 
 
-def look_for_merges(platoons, max_distance, max_platoon_length):
+def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
     """
     Checks for the nearest platoon that can merge with each platoon. The merge
     candidate platoons are those that are closer than a maximum distance and
@@ -504,9 +547,11 @@ def look_for_merges(platoons, max_distance, max_platoon_length):
     :param platoons: list of platoons of the simulation
     :param max_distance: maximum distance to check for platoons that can merge
     :param max_platoon_length: maximum platoon length allowed in vehicles
+    :param edge_filter: list of edges where platooning is allowed
     :type platoons: list[Platoon]
     :type max_distance: float
     :type max_platoon_length: int
+    :type edge_filter: list[str]
     :return: an list of indexes of platoons to merge, with -1 meaning that
     there is no merge for a platoon
     :rtype: list[int]
@@ -515,6 +560,9 @@ def look_for_merges(platoons, max_distance, max_platoon_length):
 
     for i in range(len(platoons) - 1):
         if platoons[i].is_selected_for_maneuver() or platoons[i].is_in_maneuver():
+            continue
+
+        if platoons[i].leader_wants_to_leave(edge_filter) and platoons[i].length() == 1:
             continue
 
         min_distance = max_distance
@@ -526,6 +574,9 @@ def look_for_merges(platoons, max_distance, max_platoon_length):
         for j in range(i + 1, len(platoons)):
             l2 = platoons[j].length()
             if platoons[j].is_selected_for_maneuver() or platoons[j].is_in_maneuver() or l1 + l2 > max_platoon_length:
+                continue
+
+            if platoons[j].leader_wants_to_leave(edge_filter) and platoons[j].length() == 1:
                 continue
 
             # neighbor_edge = traci.vehicle.getRoadID(platoons[j].get_leader())
