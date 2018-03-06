@@ -66,12 +66,18 @@ def main():
 
         vehicles = utils.retrieve_vehicles(edge_filter)
         cacc_vehicles = utils.filter_cacc_vehicles(vehicles, vtype_filter)
+        simulation_vehicles = traci.vehicle.getIDList()
 
         for vehicle in cacc_vehicles:
             if not platooning.in_platoon(platoons, vehicle):
                 platoons.append(platooning.Platoon([vehicle], cacc_spacing=args.cacc_spacing))
 
         for platoon in platoons:
+            # Remove platoons with vehicles that have left the simulation
+            if not platoon.all_members_are_in(simulation_vehicles):
+                platoons.pop(platoons.index(platoon))
+                continue
+
             platoon.look_for_splits()
 
             if platoon.leader_wants_to_leave(edge_filter):

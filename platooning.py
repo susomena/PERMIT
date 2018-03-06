@@ -404,6 +404,22 @@ class Platoon:
         """
         return [traci.vehicle.getRoute(vehicle) for vehicle in self._members]
 
+    def all_members_are_in(self, vehicle_list):
+        """
+        Checks whether all the vehicles of the platoon are present in a list of
+        vehicles or not
+        :param vehicle_list: the list to be checked
+        :type vehicle_list: list[str]
+        :return: True if all the vehicles of the platoon are present in the
+        list, False otherwise
+        :rtype: bool
+        """
+        for vehicle in self._members:
+            if vehicle not in vehicle_list:
+                return False
+
+        return True
+
 
 def in_platoon(platoons, vehicle):
     """
