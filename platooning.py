@@ -73,7 +73,12 @@ class Platoon:
         for i in range(1, len(vehicles)):
             traci.vehicle.setLaneChangeMode(vehicles[i], utils.FIX_LC)
             self._topology[vehicles[i]] = {"leader": vehicles[0], "front": vehicles[i - 1]}
-            self._states.append(self.GOING_TO_POSITION)
+            self._states.append(self.WAITING)
+            utils.set_par(vehicles[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
+            min_gap = traci.vehicle.getMinGap(vehicles[i])
+            # The CACC controller tries to keep (cacc_spacing + min_gap)
+            # meters as intra-platoon spacing
+            utils.set_par(vehicles[i], cc.PAR_CACC_SPACING, cacc_spacing - min_gap)
             traci.vehicle.setSpeedFactor(vehicles[i], 1.05)
 
             lanes.append(traci.vehicle.getLaneIndex(vehicles[i]))
@@ -215,16 +220,35 @@ class Platoon:
             utils.change_lane(self._members[0], self._desired_lane)
 
         for i in range(1, len(self._members)):
+            if self._states[i] is self.WAITING:
+                # The gap-making stage is done in a sequential manner to avoid
+                # huge decelerations and possible dangerous situations as is
+                # done in:
+                # E. Semsar-kazerooni, J. Ploeg, "Interaction protocols for
+                # cooperative merging and lane reduction scenarios," IEEE
+                # Conference on Intelligent Transportation Systems (ITSC), Las
+                # Palmas, Spain, 2015, pp. 1964-1970
+                lane = traci.vehicle.getLaneIndex(self._members[i])
+                lane_front = traci.vehicle.getLaneIndex(self._members[i - 1])
+                if lane != lane_front:
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
+
+                if self._states[i - 2] is not self.WAITING and self._states[i - 2] is not self.GOING_TO_POSITION \
+                        or i == 1:
+                    self._states[i] = self.GOING_TO_POSITION
+
             if self._states[i] is self.GOING_TO_POSITION:
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
-                if self._cacc_spacing * 1.5 - 1 < front_distance < self._cacc_spacing * 1.5 + 1:
+                no_need_to_open_gap = already_in_lane(self._members[i], self._desired_lane)
+                no_need_to_open_gap = no_need_to_open_gap and already_in_lane(self._members[i - 1], self._desired_lane)
+                if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1 \
+                        or no_need_to_open_gap:
                     self._states[i] = self.CHANGING_LANE
                 else:
-                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
-                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.5)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.25)
 
             if self._states[i] is self.CHANGING_LANE:
-                if it_is_safe_to_change_lane(self._members[i], self._desired_lane_id, self._cacc_spacing * 1.5 - 1)\
+                if it_is_safe_to_change_lane(self._members[i], self._desired_lane_id, self._cacc_spacing * 1.25 - 1)\
                         or already_in_lane(self._members[i], self._desired_lane):
                     utils.change_lane(self._members[i], self._desired_lane)
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
@@ -586,6 +610,7 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
         l1 = platoons[i].length()
         # route_edges = traci.vehicle.getRoute(platoons[i].get_leader())
         routes = platoons[i].get_routes_list()
+        edges_list = platoons[i].get_edges_list()
 
         for j in range(i + 1, len(platoons)):
             l2 = platoons[j].length()
@@ -597,8 +622,10 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
 
             # neighbor_edge = traci.vehicle.getRoadID(platoons[j].get_leader())
             neighbor_edges_list = platoons[j].get_edges_list()
+            neighbor_routes = platoons[j].get_routes_list()
 
-            if all_edges_in_all_routes(neighbor_edges_list, routes):
+            if all_edges_in_all_routes(neighbor_edges_list, routes) \
+                    and all_edges_in_all_routes(edges_list, neighbor_routes):
                 distance = abs(platoons[i].distance_to(platoons[j]))
                 if distance < min_distance:
                     min_distance = distance
