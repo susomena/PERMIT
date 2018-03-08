@@ -137,7 +137,7 @@ class Platoon:
             utils.set_par(vid, cc.PAR_LEADER_SPEED_AND_ACCELERATION, leader_data)
             utils.set_par(vid, cc.PAR_PRECEDING_SPEED_AND_ACCELERATION, front_data)
             # compute GPS distance and pass it to the fake CACC
-            f_d = utils.get_distance(vid, links["front"])
+            f_d = gap_between_vehicles(vid, links["front"])
             utils.set_par(vid, cc.PAR_LEADER_FAKE_DATA, cc.pack(l_v, l_u))
             utils.set_par(vid, cc.PAR_FRONT_FAKE_DATA, cc.pack(f_v, f_u, f_d))
 
@@ -495,10 +495,10 @@ def gap_between_vehicles(v1, v2):
     :return: gap between the two vehicles
     :rtype: float
     """
-    l1 = traci.vehicle.getLength(v1)
-    l2 = traci.vehicle.getLength(v2)
+    distance = distance_between_vehicles(v1, v2)
+    length = traci.vehicle.getLength(v2) if distance > 0 else traci.vehicle.getLength(v1)
 
-    return abs(distance_between_vehicles(v1, v2)) - (l1 + l2) / 2
+    return abs(distance) - length
 
 
 def first_of(vehicle_list):
@@ -608,7 +608,6 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
         min_distance = max_distance
         index = -1
         l1 = platoons[i].length()
-        # route_edges = traci.vehicle.getRoute(platoons[i].get_leader())
         routes = platoons[i].get_routes_list()
         edges_list = platoons[i].get_edges_list()
 
@@ -620,7 +619,6 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
             if platoons[j].leader_wants_to_leave(edge_filter) and platoons[j].length() == 1:
                 continue
 
-            # neighbor_edge = traci.vehicle.getRoadID(platoons[j].get_leader())
             neighbor_edges_list = platoons[j].get_edges_list()
             neighbor_routes = platoons[j].get_routes_list()
 
@@ -630,12 +628,6 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
                 if distance < min_distance:
                     min_distance = distance
                     index = j
-
-            """if neighbor_edge in route_edges:
-                distance = abs(platoons[i].distance_to(platoons[j]))
-                if distance < min_distance:
-                    min_distance = distance
-                    index = j"""
 
         if index != -1:
             platoons[i].select_for_maneuver()
