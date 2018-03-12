@@ -238,16 +238,30 @@ class Platoon:
                     self._states[i] = self.GOING_TO_POSITION
 
             if self._states[i] is self.GOING_TO_POSITION:
+                lane = traci.vehicle.getLaneIndex(self._members[i])
+                lane_front = traci.vehicle.getLaneIndex(self._members[i - 1])
+                if lane != lane_front:
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
+                else:
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
+
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
                 no_need_to_open_gap = already_in_lane(self._members[i], self._desired_lane)
                 no_need_to_open_gap = no_need_to_open_gap and already_in_lane(self._members[i - 1], self._desired_lane)
                 if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1 \
-                        or no_need_to_open_gap:
+                        and self._states[i - 1] is not self.GOING_TO_POSITION or no_need_to_open_gap:
                     self._states[i] = self.CHANGING_LANE
                 else:
                     utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.25)
 
             if self._states[i] is self.CHANGING_LANE:
+                lane = traci.vehicle.getLaneIndex(self._members[i])
+                lane_front = traci.vehicle.getLaneIndex(self._members[i - 1])
+                if lane != lane_front:
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
+                else:
+                    utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
+
                 if it_is_safe_to_change_lane(self._members[i], self._desired_lane_id, self._cacc_spacing * 1.25 - 1)\
                         or already_in_lane(self._members[i], self._desired_lane):
                     utils.change_lane(self._members[i], self._desired_lane)
