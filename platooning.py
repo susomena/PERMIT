@@ -395,34 +395,13 @@ class Platoon:
         """
         return distance_between_vehicles(self.get_leader(), platoon.get_leader())
 
-    def is_in_maneuver(self):
+    def is_splitting(self):
         """
-        Returns whether this platoon is in a maneuver or not
-        :return: True if the platoon is in a maneuver, False if not
+        Returns whether this platoon is in a split maneuver or not
+        :return: True if the platoon is in a split maneuver, False if not
         :rtype: bool
         """
-        return self._in_maneuver
-
-    def select_for_maneuver(self):
-        """
-        Sets the platoon selected for maneuver
-        """
-        self._selected_for_maneuver = True
-
-    def deselect_for_maneuver(self):
-        """
-        Sets the platoon not selected for maneuver
-        """
-        self._selected_for_maneuver = False
-
-    def is_selected_for_maneuver(self):
-        """
-        Returns whether this platoon has been selected for a maneuver or not
-        :return: True if the platoon has been selected for a maneuver, False if
-        not
-        :rtype: bool
-        """
-        return self._selected_for_maneuver
+        return self._splitting
 
     def get_edges_list(self):
         """
@@ -562,9 +541,6 @@ def merge_platoons(p1, p2):
     :return: the new platoon
     :rtype: Platoon
     """
-    p1.deselect_for_maneuver()
-    p2.deselect_for_maneuver()
-
     vehicle_list = []
     vehicle_list.extend(p1.get_members())
     vehicle_list.extend(p2.get_members())
@@ -613,7 +589,7 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
     merges = [-1] * len(platoons)
 
     for i in range(len(platoons) - 1):
-        if platoons[i].is_selected_for_maneuver() or platoons[i].is_in_maneuver():
+        if platoons[i].is_splitting():
             continue
 
         if platoons[i].leader_wants_to_leave(edge_filter) and platoons[i].length() == 1:
@@ -627,7 +603,7 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
 
         for j in range(i + 1, len(platoons)):
             l2 = platoons[j].length()
-            if platoons[j].is_selected_for_maneuver() or platoons[j].is_in_maneuver() or l1 + l2 > max_platoon_length:
+            if platoons[j].is_splitting() or l1 + l2 > max_platoon_length:
                 continue
 
             if platoons[j].leader_wants_to_leave(edge_filter) and platoons[j].length() == 1:
@@ -644,8 +620,6 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
                     index = j
 
         if index != -1:
-            platoons[i].select_for_maneuver()
-            platoons[index].select_for_maneuver()
             merges[i] = index
 
     return merges

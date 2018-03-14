@@ -83,13 +83,17 @@ def main():
             if platoon.leader_wants_to_leave(edge_filter):
                 platoon.leader_leave()
 
-        merges = platooning.look_for_merges(platoons, max_distance=args.max_distance,
-                                            max_platoon_length=args.platoon_length, edge_filter=edge_filter)
+        while True:
+            merges = platooning.look_for_merges(platoons, max_distance=args.max_distance,
+                                                max_platoon_length=args.platoon_length, edge_filter=edge_filter)
 
-        for i in range(len(merges)):
-            if merges[i] != -1:
-                platoons.append(platooning.merge_platoons(platoons[i], platoons[merges[i]]))
-                platoons = [platoon for platoon in platoons if platoon not in {platoons[i], platoons[merges[i]]}]
+            for i in range(len(merges)):
+                if merges[i] != -1:
+                    platoons.append(platooning.merge_platoons(platoons[i], platoons[merges[i]]))
+                    platoons = [platoon for platoon in platoons if platoon not in {platoons[i], platoons[merges[i]]}]
+
+            if all([x == -1 for x in merges]):
+                break
 
         for platoon in platoons:
             platoon.update_desired_speed()
