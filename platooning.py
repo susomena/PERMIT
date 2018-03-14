@@ -87,10 +87,8 @@ class Platoon:
         self._members = vehicles
         self._cacc_spacing = cacc_spacing
         self._merging = merging
-        self._in_maneuver = True if merging else False
         self._splitting = False
         self._vehicles_splitting = [False] * len(vehicles)
-        self._selected_for_maneuver = False
 
         leader_max_speed = traci.vehicle.getAllowedSpeed(vehicles[0])
         lane = traci.vehicle.getLaneID(vehicles[0])
@@ -206,7 +204,6 @@ class Platoon:
                         and not self._vehicles_splitting[i]:
                     self._splitting = True
                     self._vehicles_splitting[i] = True
-                    self._in_maneuver = True
                     self._states[i] = self.LEAVING
                     if i < len(self._states) - 1:
                         self._states[i + 1] = self.OPENING_GAP
@@ -279,7 +276,6 @@ class Platoon:
 
         if self.all_members_are_idle():
             self._merging = False
-            self._in_maneuver = False
 
     def split(self):
         """
@@ -323,7 +319,6 @@ class Platoon:
 
         if self.all_members_are_idle():
             self._splitting = False
-            self._in_maneuver = False
             remaining_platoon = [self._members[i] for i in range(len(self._members)) if not self._vehicles_splitting[i]]
             self.__init__(remaining_platoon, self._cacc_spacing, True)
 
