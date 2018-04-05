@@ -87,10 +87,16 @@ def main():
             merges = platooning.look_for_merges(platoons, max_distance=args.max_distance,
                                                 max_platoon_length=args.platoon_length, edge_filter=edge_filter)
 
+            new_platoons = []
+            platoons_to_remove = set()
             for i in range(len(merges)):
                 if merges[i] != -1:
-                    platoons.append(platooning.merge_platoons(platoons[i], platoons[merges[i]]))
-                    platoons = [platoon for platoon in platoons if platoon not in {platoons[i], platoons[merges[i]]}]
+                    new_platoons.append(platooning.merge_platoons(platoons[i], platoons[merges[i]]))
+                    platoons_to_remove.add(platoons[i])
+                    platoons_to_remove.add(platoons[merges[i]])
+
+            platoons.extend(new_platoons)
+            platoons = [platoon for platoon in platoons if platoon not in platoons_to_remove]
 
             if all([x == -1 for x in merges]):
                 break

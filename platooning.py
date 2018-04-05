@@ -232,7 +232,10 @@ class Platoon:
 
                 if self._states[i - 2] is not self.WAITING and self._states[i - 2] is not self.GOING_TO_POSITION \
                         or i == 1:
+                    self._topology[self._members[i]]["leader"] = self._members[0]
                     self._states[i] = self.GOING_TO_POSITION
+                else:
+                    self._topology[self._members[i]]["leader"] = self._members[i - 1]
 
             if self._states[i] is self.GOING_TO_POSITION:
                 lane = traci.vehicle.getLaneIndex(self._members[i])
