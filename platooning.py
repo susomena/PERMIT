@@ -173,8 +173,8 @@ class Platoon:
         Creates a new platoon with all the vehicles of the platoon except for
         the former leader
         """
+        traci.vehicle.setLaneChangeMode(self._members[0], utils.DEFAULT_LC)
         if len(self._members) != 1:
-            traci.vehicle.setLaneChangeMode(self._members[0], utils.DEFAULT_LC)
             self.__init__(self._members[1:], self._cacc_spacing)
 
     def look_for_splits(self):
@@ -285,16 +285,16 @@ class Platoon:
         for i in range(1, len(self._members)):
             if self._states[i] is self.LEAVING:
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
-                if self._cacc_spacing * 1.5 - 1 < front_distance < self._cacc_spacing * 1.5 + 1:
+                if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1:
                     self._states[i] = self.CHANGING_LANE
                 else:
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
-                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.5)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.25)
 
             if self._states[i] is self.CHANGING_LANE:
                 desired_lane = self._desired_lane - 1 if self._desired_lane > 1 else 0
                 desired_lane_id = self._desired_lane_id[:-1] + str(desired_lane)
-                if it_is_safe_to_change_lane(self._members[i], desired_lane_id, self._cacc_spacing * 1.5 - 1):
+                if it_is_safe_to_change_lane(self._members[i], desired_lane_id, self._cacc_spacing * 1.25 - 1):
                     utils.change_lane(self._members[i], desired_lane)
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
                     traci.vehicle.setSpeedFactor(self._members[i], 1.0)
@@ -303,11 +303,11 @@ class Platoon:
 
             if self._states[i] is self.OPENING_GAP:
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
-                if self._cacc_spacing * 1.5 - 1 < front_distance < self._cacc_spacing * 1.5 + 1 \
+                if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1 \
                         and self._states[i - 1] is self.CHANGING_LANE or self._states[i - 1] is self.IDLE:
                     self._states[i] = self.WAITING
                 else:
-                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.5)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.25)
 
             if self._states[i] is self.WAITING:
                 front_vehicle_index = self._members.index(self._topology[self._members[i]]["front"])
