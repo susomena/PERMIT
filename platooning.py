@@ -63,7 +63,8 @@ class Platoon:
         """
         self._topology = dict()
         self._states = [self.IDLE]
-        traci.vehicle.setLaneChangeMode(vehicles[0], utils.FIX_LC)
+        if len(vehicles) > 1:
+            traci.vehicle.setLaneChangeMode(vehicles[0], utils.FIX_LC)
         utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
         traci.vehicle.setSpeedFactor(vehicles[0], 1)
 
@@ -435,6 +436,20 @@ class Platoon:
 
         return True
 
+    def get_desired_lane(self):
+        return self._desired_lane
+
+    def get_desired_lane_id(self):
+        return self._desired_lane_id
+
+    def length_sum(self):
+        length = 0
+
+        for vehicle in self._members:
+            length += traci.vehicle.getLength(vehicle)
+
+        return length
+
 
 def in_platoon(platoons, vehicle):
     """
@@ -596,6 +611,11 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
         min_distance = max_distance
         index = -1
         l1 = platoons[i].length()
+        max_speed_1 = traci.vehicle.getMaxSpeed(platoons[i].get_leader())
+        allowed_speed_1 = traci.vehicle.getAllowedSpeed(platoons[i].get_leader())
+        lane_1 = platoons[i].get_desired_lane()
+        lane_id_1 = platoons[i].get_desired_lane_id()
+        road_max_speed = traci.lane.getMaxSpeed(lane_id_1)
         routes = platoons[i].get_routes_list()
         edges_list = platoons[i].get_edges_list()
 
@@ -607,15 +627,43 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
             if platoons[j].leader_wants_to_leave(edge_filter) and platoons[j].length() == 1:
                 continue
 
+            max_speed_2 = traci.vehicle.getMaxSpeed(platoons[j].get_leader())
+            allowed_speed_2 = traci.vehicle.getAllowedSpeed(platoons[j].get_leader())
+            if max_speed_1 < allowed_speed_2 or max_speed_2 < allowed_speed_1:
+                continue
+
             neighbor_edges_list = platoons[j].get_edges_list()
             neighbor_routes = platoons[j].get_routes_list()
 
-            if all_edges_in_all_routes(neighbor_edges_list, routes) \
-                    and all_edges_in_all_routes(edges_list, neighbor_routes):
-                distance = abs(platoons[i].distance_to(platoons[j]))
-                if distance < min_distance:
-                    min_distance = distance
-                    index = j
+            if not all_edges_in_all_routes(neighbor_edges_list, routes) \
+                    or not all_edges_in_all_routes(edges_list, neighbor_routes):
+                continue
+
+            lane_2 = platoons[j].get_desired_lane()
+            lanes = [lane_1, lane_2]
+            lane_id_2 = platoons[j].get_desired_lane_id()
+            lane_ids = [lane_id_1, lane_id_2]
+            desired_lane = max(lanes) if max_speed_1 > 0.9 * road_max_speed else min(lanes)
+            desired_lane_id = lane_ids[lanes.index(desired_lane)]
+            vehicles_in_lane = traci.lane.getLastStepVehicleIDs(desired_lane_id)
+
+            max_pos = traci.vehicle.getLanePosition(first_of(platoons[i].get_members() + platoons[j].get_members()))
+            l = platoons[i].length_sum() + platoons[j].length_sum() + (l1 + l2 + 1) * platoons[i].get_cacc_spacing()
+            min_pos = max_pos - l
+
+            obstacle_vehicle = False
+            for vehicle in vehicles_in_lane:
+                pos = traci.vehicle.getLanePosition(vehicle)
+                if min_pos < pos < max_pos and vehicle not in platoons[i] and vehicle not in platoons[j]:
+                    obstacle_vehicle = True
+
+            if obstacle_vehicle:
+                continue
+
+            distance = abs(platoons[i].distance_to(platoons[j]))
+            if distance < min_distance:
+                min_distance = distance
+                index = j
 
         if index != -1:
             merges[i] = index
