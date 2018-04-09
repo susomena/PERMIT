@@ -21,7 +21,6 @@ import sys
 import argparse
 from formatter import CustomFormatter
 import platooning
-import ccparams as cc
 import utils
 
 if 'SUMO_HOME' in os.environ:
@@ -30,7 +29,6 @@ if 'SUMO_HOME' in os.environ:
 else:
     sys.exit("Please, declare environment variable 'SUMO_HOME'")
 
-import sumolib
 import traci
 
 parser = argparse.ArgumentParser(description="Platooning simulator for adding autonomous mobility on SUMO scenarios",
