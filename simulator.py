@@ -72,6 +72,13 @@ def main():
             if not platooning.in_platoon(platoons, vehicle):
                 platoons.append(platooning.Platoon([vehicle], cacc_spacing=args.cacc_spacing))
 
+        teleported_vehicles = traci.simulation.getEndingTeleportIDList()
+        for vehicle in teleported_vehicles:
+            for platoon in platoons:
+                if vehicle in platoon:
+                    platoon.remove_vehicle(platoon.index_of(vehicle))
+                    break
+
         for platoon in platoons:
             # Remove platoons with vehicles that have left the simulation
             if not platoon.all_members_are_in(simulation_vehicles):

@@ -65,7 +65,7 @@ class Platoon:
         self._states = [self.IDLE]
         if len(vehicles) > 1:
             traci.vehicle.setLaneChangeMode(vehicles[0], utils.FIX_LC)
-        utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
+            utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
         traci.vehicle.setSpeedFactor(vehicles[0], 1)
 
         lanes = [traci.vehicle.getLaneIndex(vehicles[0])]
@@ -136,7 +136,7 @@ class Platoon:
             utils.set_par(vid, cc.PAR_LEADER_SPEED_AND_ACCELERATION, leader_data)
             utils.set_par(vid, cc.PAR_PRECEDING_SPEED_AND_ACCELERATION, front_data)
             # compute GPS distance and pass it to the fake CACC
-            f_d = gap_between_vehicles(vid, links["front"])
+            f_d = gap_between_vehicles(vid, links["front"])[0]
             utils.set_par(vid, cc.PAR_LEADER_FAKE_DATA, cc.pack(l_v, l_u))
             utils.set_par(vid, cc.PAR_FRONT_FAKE_DATA, cc.pack(f_v, f_u, f_d))
 
@@ -169,14 +169,24 @@ class Platoon:
 
         return False
 
+    def remove_vehicle(self, index):
+        """
+        Creates a new platoon with all the vehicles of the platoon except for
+        the vehicle in the position index
+        :param index: the position of the vehicle to be removed
+        :type index: int
+        """
+        traci.vehicle.setLaneChangeMode(self._members[index], utils.DEFAULT_LC)
+        if len(self._members) != 1:
+            self._members.pop(index)
+            self.__init__(self._members, self._cacc_spacing)
+
     def leader_leave(self):
         """
         Creates a new platoon with all the vehicles of the platoon except for
         the former leader
         """
-        traci.vehicle.setLaneChangeMode(self._members[0], utils.DEFAULT_LC)
-        if len(self._members) != 1:
-            self.__init__(self._members[1:], self._cacc_spacing)
+        self.remove_vehicle(0)
 
     def look_for_splits(self):
         """
@@ -214,7 +224,7 @@ class Platoon:
         Executes the merge maneuver finite state machine of every vehicle of
         the platoon
         """
-        if it_is_safe_to_change_lane(self._members[0], self._desired_lane_id, self._cacc_spacing * 1.5 - 1):
+        if it_is_safe_to_change_lane(self._members[0], self._desired_lane_id, self._cacc_spacing * 1.25 - 1):
             utils.change_lane(self._members[0], self._desired_lane)
 
         for i in range(1, len(self._members)):
@@ -246,7 +256,7 @@ class Platoon:
                 else:
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
 
-                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
                 no_need_to_open_gap = already_in_lane(self._members[i], self._desired_lane)
                 no_need_to_open_gap = no_need_to_open_gap and already_in_lane(self._members[i - 1], self._desired_lane)
                 if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1 \
@@ -274,7 +284,7 @@ class Platoon:
                     self._states[i] = self.CLOSING_GAP
 
             if self._states[i] is self.CLOSING_GAP:
-                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
                 if self._cacc_spacing - 1 < front_distance < self._cacc_spacing + 1:
                     self._states[i] = self.IDLE
 
@@ -288,7 +298,7 @@ class Platoon:
         """
         for i in range(1, len(self._members)):
             if self._states[i] is self.LEAVING:
-                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
                 if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1:
                     self._states[i] = self.CHANGING_LANE
                 else:
@@ -306,7 +316,7 @@ class Platoon:
                     self._states[i] = self.IDLE
 
             if self._states[i] is self.OPENING_GAP:
-                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])
+                front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
                 if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1 \
                         and self._states[i - 1] is self.CHANGING_LANE or self._states[i - 1] is self.IDLE:
                     self._states[i] = self.WAITING
@@ -392,7 +402,7 @@ class Platoon:
         distance is computed is placed behind the self platoon
         :rtype: float
         """
-        return distance_between_vehicles(self.get_leader(), platoon.get_leader())
+        return distance_between_vehicles(self.get_leader(), platoon.get_leader())[0]
 
     def is_splitting(self):
         """
@@ -437,18 +447,49 @@ class Platoon:
         return True
 
     def get_desired_lane(self):
+        """
+        Returns the platoon's desired lane index
+        :return: the index of the platoon's desired lane
+        :rtype: int
+        """
         return self._desired_lane
 
     def get_desired_lane_id(self):
+        """
+        Returns the platoon's desired lane id
+        :return: the id of the platoon's desired lane
+        :rtype: str
+        """
         return self._desired_lane_id
 
     def length_sum(self):
+        """
+        Returns the sum of the lengths of all the platoon members
+        :return: the sum of the lengths of all the platoon members
+        :rtype: float
+        """
         length = 0
 
         for vehicle in self._members:
             length += traci.vehicle.getLength(vehicle)
 
         return length
+
+    def index_of(self, vehicle):
+        """
+        Returns the position of the vehicle in the platoon or -1 if the vehicle
+        is not a member of the platoon
+        :param vehicle: id of the vehicle
+        :type vehicle: str
+        :return: position of the vehicle in the platoon or -1 if the vehicle is
+        not a member of the platoon
+        :rtype: int
+        """
+        for i in range(len(self._members)):
+            if vehicle == self._members[i]:
+                return i
+
+        return -1
 
 
 def in_platoon(platoons, vehicle):
@@ -469,26 +510,35 @@ def in_platoon(platoons, vehicle):
     return False
 
 
-def distance_between_vehicles(v1, v2):
+def distance_between_vehicles(v1, v2, recursion=False):
     """
     Computes the distance between two vehicles (from v1 to v2)
     :param v1: ID of the first vehicle
     :param v2: ID of the second vehicle
+    :param recursion: whether this function is called from itself or not
     :type v1: str
     :type v2: str
-    :return: distance between the two vehicles (from v1 to v2)
-    :rtype: float
+    :type recursion: bool
+    :return: tuple with the distance between the two vehicles (from v1 to v2)
+    and whether this distance is valid or not
+    :rtype: (float, bool)
     """
     edge = traci.vehicle.getRoadID(v2)
     pos = traci.vehicle.getLanePosition(v2)
     lane = traci.vehicle.getLaneIndex(v2)
     distance = traci.vehicle.getDrivingDistance(v1, edge, pos, lane)
 
+    # Sometimes both vehicles will be unreachable for each other, in this case
+    # the computed distance in both ways will be negative and invalid
+    if recursion and distance < 0:
+        return -1, False
+
     # Since getDrivingDistance can return a negative and invalid distance when
     # computing the distance to a vehicle that is placed behind, we compute the
     # distance in both directions to use the valid distance (which will be the
     # positive and valid one) and multiply the distance to a rear vehicle by -1
-    return distance if distance >= 0 else -distance_between_vehicles(v2, v1)
+    sign = -1 if recursion else 1
+    return distance * sign, True if distance >= 0 else distance_between_vehicles(v2, v1, recursion=True)
 
 
 def gap_between_vehicles(v1, v2):
@@ -498,13 +548,14 @@ def gap_between_vehicles(v1, v2):
     :param v2: ID of the second vehicle
     :type v1: str
     :type v2: str
-    :return: gap between the two vehicles
-    :rtype: float
+    :return: tuple with the gap between the two vehicles and whether this gap
+    is valid or not
+    :rtype: (float, bool)
     """
-    distance = distance_between_vehicles(v1, v2)
+    distance, valid_distance = distance_between_vehicles(v1, v2)
     length = traci.vehicle.getLength(v2) if distance > 0 else traci.vehicle.getLength(v1)
 
-    return abs(distance) - length
+    return abs(distance) - length, valid_distance
 
 
 def first_of(vehicle_list):
@@ -519,7 +570,7 @@ def first_of(vehicle_list):
     """:type: list[float]"""
 
     for i in range(1, len(vehicle_list)):
-        distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0]))
+        distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0])[0])
 
     return vehicle_list[distances.index(min(distances))]
 
@@ -538,7 +589,7 @@ def sort_vehicle_list(vehicle_list):
     """:type: list[float]"""
 
     for i in range(1, len(vehicle_list)):
-        distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0]))
+        distances.append(distance_between_vehicles(vehicle_list[i], vehicle_list[0])[0])
 
     return [vehicle for _, vehicle in sorted(zip(distances, vehicle_list))]
 
@@ -686,7 +737,8 @@ def it_is_safe_to_change_lane(vehicle, lane_id, safe_gap):
     vehicles_in_lane = traci.lane.getLastStepVehicleIDs(lane_id)
 
     for v in vehicles_in_lane:
-        if gap_between_vehicles(vehicle, v) < safe_gap:
+        gap, valid_gap = gap_between_vehicles(vehicle, v)
+        if gap < safe_gap and valid_gap:
             return False
 
     return True
