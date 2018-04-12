@@ -538,7 +538,7 @@ def distance_between_vehicles(v1, v2, recursion=False):
     # distance in both directions to use the valid distance (which will be the
     # positive and valid one) and multiply the distance to a rear vehicle by -1
     sign = -1 if recursion else 1
-    return distance * sign, True if distance >= 0 else distance_between_vehicles(v2, v1, recursion=True)
+    return (distance * sign, True) if distance >= 0 else distance_between_vehicles(v2, v1, recursion=True)
 
 
 def gap_between_vehicles(v1, v2):
