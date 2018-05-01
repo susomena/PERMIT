@@ -46,8 +46,12 @@ arg_group.add_argument("-vf", "--vtype-filter", type=str,
                        help="list of CACC enabled vehicle types (empty list means every vehicle type is CACC enabled)",
                        nargs="*", metavar=("VTYPE 1", "VTYPE 2"))
 arg_group.add_argument("-md", "--max-distance", default=100.0, type=float, help="maximum distance for platoon merge")
-arg_group.add_argument("-cs", "--cacc-spacing", default=5.0, type=float, help="intra-platoon spacing")
+arg_group.add_argument("-dg", "--desired-gap", default=5.0, type=float, help="distance between vehicles in a platoon")
+arg_group.add_argument("-sg", "--safe-gap", default=6.25, type=float,
+                       help="safety distance between vehicles for lane changes")
 arg_group.add_argument("-pl", "--platoon-length", default=8, type=int, help="max platoon length in vehicles")
+arg_group.add_argument("-rs", "--relative-speed", default=3.3, type=float,
+                       help="maximum relative speed allowed for merging (m/s)")
 args = parser.parse_args()
 
 
@@ -68,7 +72,7 @@ def main():
 
         for vehicle in cacc_vehicles:
             if not platooning.in_platoon(platoons, vehicle):
-                platoons.append(platooning.Platoon([vehicle], cacc_spacing=args.cacc_spacing))
+                platoons.append(platooning.Platoon([vehicle], desired_gap=args.desired_gap, safe_gap=args.safe_gap))
 
         teleported_vehicles = traci.simulation.getEndingTeleportIDList()
         for vehicle in teleported_vehicles:
@@ -90,7 +94,8 @@ def main():
 
         merges, lane_changes = platooning.look_for_merges(platoons, max_distance=args.max_distance,
                                                           max_platoon_length=args.platoon_length,
-                                                          edge_filter=edge_filter)
+                                                          edge_filter=edge_filter,
+                                                          max_relative_speed=args.relative_speed)
 
         new_platoons = []
         platoons_to_remove = set()

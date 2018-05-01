@@ -41,13 +41,13 @@ class Platoon:
     # Maneuver states
     IDLE = 0
     GOING_TO_POSITION = 1
-    CHANGING_LANE = 2
+    CHECK_LANE = 2
     CLOSING_GAP = 3
     LEAVING = 4
     OPENING_GAP = 5
     WAITING = 6
 
-    def __init__(self, vehicles, cacc_spacing, merging=False, lane_change=False):
+    def __init__(self, vehicles, desired_gap, safe_gap, merging=False, lane_change=False):
         """
         Constructor of the Platoon class. Every platoon is initialized with a
         ordered list of vehicles. The first vehicle is the platoon leader and
@@ -55,10 +55,12 @@ class Platoon:
         the vehicles list is composed by just one vehicle then a platoon of one
         vehicle is created.
         :param vehicles: list of vehicles that compose the platoon
-        :param cacc_spacing: intra-platoon spacing
+        :param desired_gap: distance between vehicles in a platoon
+        :param safe_gap: safety distance between vehicles for lane changes
         :param merging: whether the new platoon is in a maneuver or not
         :type vehicles: list[str]
-        :type cacc_spacing: float
+        :type desired_gap: float
+        :type safe_gap: float
         :type merging: bool
         """
         self._topology = dict()
@@ -77,16 +79,17 @@ class Platoon:
             self._states.append(self.WAITING)
             utils.set_par(vehicles[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
             min_gap = traci.vehicle.getMinGap(vehicles[i])
-            # The CACC controller tries to keep (cacc_spacing + min_gap)
+            # The CACC controller tries to keep (desired_gap + min_gap)
             # meters as intra-platoon spacing
-            utils.set_par(vehicles[i], cc.PAR_CACC_SPACING, cacc_spacing - min_gap)
+            utils.set_par(vehicles[i], cc.PAR_CACC_SPACING, desired_gap - min_gap)
             traci.vehicle.setSpeedFactor(vehicles[i], 1.05)
 
             lanes.append(traci.vehicle.getLaneIndex(vehicles[i]))
             lane_ids.append(traci.vehicle.getLaneID(vehicles[i]))
 
         self._members = vehicles
-        self._cacc_spacing = cacc_spacing
+        self._desired_gap = desired_gap
+        self._safe_gap = safe_gap
         self._merging = merging
         self._splitting = False
         self._vehicles_splitting = [False] * len(vehicles)
@@ -193,7 +196,7 @@ class Platoon:
         if len(self._members) != 1:
             self._members.pop(index)
 
-        self.__init__(self._members, self._cacc_spacing)
+        self.__init__(self._members, self._desired_gap, self._safe_gap)
 
     def leader_leave(self):
         """
@@ -242,7 +245,7 @@ class Platoon:
         Executes the merge maneuver finite state machine of every vehicle of
         the platoon
         """
-        if it_is_safe_to_change_lane(self._members[0], self._desired_lane_id, self._cacc_spacing * 1.25 - 1):
+        if it_is_safe_to_change_lane(self._members[0], self._desired_lane_id, self._safe_gap - 1):
             utils.change_lane(self._members[0], self._desired_lane)
 
         for i in range(1, len(self._members)):
@@ -277,13 +280,13 @@ class Platoon:
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
                 no_need_to_open_gap = already_in_lane(self._members[i], self._desired_lane)
                 no_need_to_open_gap = no_need_to_open_gap and already_in_lane(self._members[i - 1], self._desired_lane)
-                if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1 \
+                if self._safe_gap - 1 < front_distance < self._safe_gap + 1 \
                         and self._states[i - 1] is not self.GOING_TO_POSITION or no_need_to_open_gap:
-                    self._states[i] = self.CHANGING_LANE
+                    self._states[i] = self.CHECK_LANE
                 else:
-                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.25)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._safe_gap)
 
-            if self._states[i] is self.CHANGING_LANE:
+            if self._states[i] is self.CHECK_LANE:
                 lane = traci.vehicle.getLaneIndex(self._members[i])
                 lane_front = traci.vehicle.getLaneIndex(self._members[i - 1])
                 if lane != lane_front:
@@ -291,19 +294,19 @@ class Platoon:
                 else:
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
 
-                if it_is_safe_to_change_lane(self._members[i], self._desired_lane_id, self._cacc_spacing * 1.25 - 1)\
+                if it_is_safe_to_change_lane(self._members[i], self._desired_lane_id, self._safe_gap - 1)\
                         or already_in_lane(self._members[i], self._desired_lane):
                     utils.change_lane(self._members[i], self._desired_lane)
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.CACC)
                     min_gap = traci.vehicle.getMinGap(self._members[i])
                     # The CACC controller tries to keep (cacc_spacing + min_gap)
                     # meters as intra-platoon spacing
-                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing - min_gap)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._desired_gap - min_gap)
                     self._states[i] = self.CLOSING_GAP
 
             if self._states[i] is self.CLOSING_GAP:
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
-                if self._cacc_spacing - 1 < front_distance < self._cacc_spacing + 1:
+                if self._desired_gap - 1 < front_distance < self._desired_gap + 1:
                     self._states[i] = self.IDLE
 
         if self.all_members_are_idle():
@@ -317,16 +320,16 @@ class Platoon:
         for i in range(1, len(self._members)):
             if self._states[i] is self.LEAVING:
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
-                if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1:
-                    self._states[i] = self.CHANGING_LANE
+                if self._safe_gap - 1 < front_distance < self._safe_gap + 1:
+                    self._states[i] = self.CHECK_LANE
                 else:
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.FAKED_CACC)
-                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.25)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._safe_gap)
 
-            if self._states[i] is self.CHANGING_LANE:
+            if self._states[i] is self.CHECK_LANE:
                 desired_lane = self._desired_lane - 1 if self._desired_lane > 1 else 0
                 desired_lane_id = self._desired_lane_id[:-1] + str(desired_lane)
-                if it_is_safe_to_change_lane(self._members[i], desired_lane_id, self._cacc_spacing * 1.25 - 1):
+                if it_is_safe_to_change_lane(self._members[i], desired_lane_id, self._safe_gap - 1):
                     utils.change_lane(self._members[i], desired_lane)
                     utils.set_par(self._members[i], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
                     traci.vehicle.setSpeedFactor(self._members[i], 1.0)
@@ -335,24 +338,24 @@ class Platoon:
 
             if self._states[i] is self.OPENING_GAP:
                 front_distance = gap_between_vehicles(self._members[i], self._members[i - 1])[0]
-                if self._cacc_spacing * 1.25 - 1 < front_distance < self._cacc_spacing * 1.25 + 1 \
-                        and self._states[i - 1] is self.CHANGING_LANE or self._states[i - 1] is self.IDLE:
+                if self._safe_gap - 1 < front_distance < self._safe_gap + 1 \
+                        and self._states[i - 1] is self.CHECK_LANE or self._states[i - 1] is self.IDLE:
                     self._states[i] = self.WAITING
                 else:
-                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing * 1.25)
+                    utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._safe_gap)
 
             if self._states[i] is self.WAITING:
                 front_vehicle_index = self._members.index(self._topology[self._members[i]]["front"])
                 if self._states[front_vehicle_index] is self.IDLE:
                     self._topology[self._members[i]]["front"] = self._members[front_vehicle_index - 1]
                     if not self._vehicles_splitting[front_vehicle_index - 1]:
-                        utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._cacc_spacing)
+                        utils.set_par(self._members[i], cc.PAR_CACC_SPACING, self._desired_gap)
                         self._states[i] = self.IDLE
 
         if self.all_members_are_idle():
             self._splitting = False
             remaining_platoon = [self._members[i] for i in range(len(self._members)) if not self._vehicles_splitting[i]]
-            self.__init__(remaining_platoon, self._cacc_spacing, True)
+            self.__init__(remaining_platoon, self._desired_gap, True)
 
     def all_members_are_idle(self):
         """
@@ -376,13 +379,21 @@ class Platoon:
         elif self._merging:
             self.merge()
 
-    def get_cacc_spacing(self):
+    def get_desired_gap(self):
         """
-        Returns the CACC spacing of this platoon
-        :return: the CACC spacing of this platoon
+        Returns the desired gap of this platoon
+        :return: the desired gap of this platoon
         :rtype: float
         """
-        return self._cacc_spacing
+        return self._desired_gap
+
+    def get_safe_gap(self):
+        """
+        Returns the safe gap of this platoon
+        :return: the safe gap of this platoon
+        :rtype: float
+        """
+        return self._safe_gap
 
     def get_leader(self):
         """
@@ -651,8 +662,8 @@ def merge_platoons(p1, p2, lane_change=False):
     vehicle_list.extend(p1.get_members())
     vehicle_list.extend(p2.get_members())
 
-    return Platoon(sort_vehicle_list(vehicle_list), cacc_spacing=p1.get_cacc_spacing(), merging=True,
-                   lane_change=lane_change)
+    return Platoon(sort_vehicle_list(vehicle_list), desired_gap=p1.get_desired_gap(), safe_gap=p1.get_safe_gap(),
+                   merging=True, lane_change=lane_change)
 
 
 def all_edges_in_all_routes(edges, routes):
@@ -676,7 +687,7 @@ def all_edges_in_all_routes(edges, routes):
     return True
 
 
-def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
+def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter, max_relative_speed):
     """
     Checks for the nearest platoon that can merge with each platoon. The merge
     candidate platoons are those that are closer than a maximum distance and
@@ -688,10 +699,12 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
     :param max_distance: maximum distance to check for platoons that can merge
     :param max_platoon_length: maximum platoon length allowed in vehicles
     :param edge_filter: list of edges where platooning is allowed
+    :param max_relative_speed: maximum relative speed allowed for merging (m/s)
     :type platoons: list[Platoon]
     :type max_distance: float
     :type max_platoon_length: int
     :type edge_filter: list[str]
+    :type max_relative_speed: float
     :return: an list of indexes of platoons to merge, with -1 meaning that
     there is no merge for a platoon
     :rtype: list[int]
@@ -736,7 +749,7 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
             if max_speed_1 < allowed_speed_2 or max_speed_2 < allowed_speed_1:
                 continue
 
-            if abs(speed_1 - speed_2) > 0.1 * max(speed_1, speed_2):
+            if abs(speed_1 - speed_2) > max_relative_speed:
                 continue
 
             neighbor_edges_list = platoons[j].get_edges_list()
@@ -756,9 +769,9 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
             vehicles_in_lane = traci.lane.getLastStepVehicleIDs(desired_lane_id)
 
             max_pos = traci.vehicle.getLanePosition(first_of(platoons[i].get_members() + platoons[j].get_members()))
-            l = platoons[i].length_sum() + platoons[j].length_sum() + (l1 + l2 + 1) * platoons[i].get_cacc_spacing()
-            min_pos = min(max_pos - l, platoons[i].get_tail_position() - platoons[i].get_cacc_spacing(),
-                          platoons[j].get_tail_position() - platoons[i].get_cacc_spacing())
+            l = platoons[i].length_sum() + platoons[j].length_sum() + (l1 + l2 + 1) * platoons[i].get_desired_gap()
+            min_pos = min(max_pos - l, platoons[i].get_tail_position() - platoons[i].get_desired_gap(),
+                          platoons[j].get_tail_position() - platoons[i].get_desired_gap())
 
             obstacle_vehicle = False
             for vehicle in vehicles_in_lane:
