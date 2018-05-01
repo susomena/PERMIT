@@ -47,7 +47,7 @@ class Platoon:
     OPENING_GAP = 5
     WAITING = 6
 
-    def __init__(self, vehicles, cacc_spacing, merging=False):
+    def __init__(self, vehicles, cacc_spacing, merging=False, lane_change=False):
         """
         Constructor of the Platoon class. Every platoon is initialized with a
         ordered list of vehicles. The first vehicle is the platoon leader and
@@ -65,7 +65,7 @@ class Platoon:
         self._states = [self.IDLE]
         if len(vehicles) > 1:
             traci.vehicle.setLaneChangeMode(vehicles[0], utils.FIX_LC)
-            utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
+        utils.set_par(vehicles[0], cc.PAR_ACTIVE_CONTROLLER, cc.ACC)
         traci.vehicle.setSpeedFactor(vehicles[0], 1)
 
         lanes = [traci.vehicle.getLaneIndex(vehicles[0])]
@@ -99,15 +99,21 @@ class Platoon:
         self._desired_lane = max(lanes) if leader_max_speed > 0.9 * road_max_speed else min(lanes)
         self._desired_lane_id = lane_ids[lanes.index(self._desired_lane)]
 
+        if lane_change:
+            for vehicle in self._members:
+                if traci.vehicle.getLaneIndex != self._desired_lane:
+                    utils.change_lane(vehicle, self._desired_lane)
+
     def __contains__(self, vehicle):
         return vehicle in self._members
 
-    def update_desired_speed(self):
+    def update_desired_speed_and_lane(self):
         """
         The ACC and CACC of Plexe SUMO seem to limit the desired speed
         automatically to 13.9m/s, so this function should be called at every
         time step to ensure that the maximum speed is updated after every edge
-        change
+        change. This function also changes the desired lane when a platoon
+        composed by one single vehicle has performed a manual lane change
         """
         for vehicle in self._members:
             # getAllowedSpeed() also includes the speed factor
@@ -115,6 +121,10 @@ class Platoon:
             vehicle_max_speed = traci.vehicle.getMaxSpeed(vehicle)
             desired_speed = min(lane_max_speed, vehicle_max_speed)
             utils.set_par(vehicle, cc.PAR_CC_DESIRED_SPEED, desired_speed)
+
+        if len(self._members) == 1:
+            self._desired_lane = traci.vehicle.getLaneIndex(self._members[0])
+            self._desired_lane_id = traci.vehicle.getLaneID(self._members[0])
 
     def communicate(self):
         """
@@ -133,7 +143,10 @@ class Platoon:
             (f_v, f_a, f_u, f_x, f_y, f_t) = cc.unpack(front_data)
             front_data = cc.pack(f_v, f_u, f_x, f_y, f_t)
             # pass leader and front vehicle data to CACC
-            utils.set_par(vid, cc.PAR_LEADER_SPEED_AND_ACCELERATION, leader_data)
+            if (l_a < 0 and f_a < 0) or (l_a > 0 and f_a > 0):
+                utils.set_par(vid, cc.PAR_LEADER_SPEED_AND_ACCELERATION, leader_data)
+            else:
+                utils.set_par(vid, cc.PAR_LEADER_SPEED_AND_ACCELERATION, front_data)
             utils.set_par(vid, cc.PAR_PRECEDING_SPEED_AND_ACCELERATION, front_data)
             # compute GPS distance and pass it to the fake CACC
             f_d = gap_between_vehicles(vid, links["front"])[0]
@@ -157,7 +170,7 @@ class Platoon:
 
         route = traci.vehicle.getRoute(self._members[0])
 
-        if route.index(edge) == len(route) - 1:
+        if edge not in route or route.index(edge) == len(route) - 1:
             return True
 
         next_edge = route[route.index(edge) + 1]
@@ -179,7 +192,8 @@ class Platoon:
         traci.vehicle.setLaneChangeMode(self._members[index], utils.DEFAULT_LC)
         if len(self._members) != 1:
             self._members.pop(index)
-            self.__init__(self._members, self._cacc_spacing)
+
+        self.__init__(self._members, self._cacc_spacing)
 
     def leader_leave(self):
         """
@@ -207,6 +221,10 @@ class Platoon:
 
             next_edge = route[route.index(edge) + 1]
             platoon_route = traci.vehicle.getRoute(self._members[0])
+
+            if edge not in platoon_route or platoon_route.index(edge) + 1 >= len(platoon_route):
+                continue
+
             next_platoon_edge = platoon_route[platoon_route.index(edge) + 1]
 
             if next_edge != next_platoon_edge:
@@ -491,6 +509,24 @@ class Platoon:
 
         return -1
 
+    def get_head_position(self):
+        """
+        Returns the position of the front bumper of the platoon leader
+        :return: position of the front bumper of the platoon leader
+        :rtype: float
+        """
+        return traci.vehicle.getLanePosition(self._members[0])
+
+    def get_tail_position(self):
+        """
+        Returns the position of the back bumper of the platoon's last member
+        :return: position of the back bumper of the platoon's last member
+        :rtype: float
+        """
+        pos = traci.vehicle.getLanePosition(self._members[-1])
+        l = traci.vehicle.getLength(self._members[-1])
+        return pos - l
+
 
 def in_platoon(platoons, vehicle):
     """
@@ -526,6 +562,9 @@ def distance_between_vehicles(v1, v2, recursion=False):
     edge = traci.vehicle.getRoadID(v2)
     pos = traci.vehicle.getLanePosition(v2)
     lane = traci.vehicle.getLaneIndex(v2)
+    if lane < 0:
+        return -1, False
+
     distance = traci.vehicle.getDrivingDistance(v1, edge, pos, lane)
 
     # Sometimes both vehicles will be unreachable for each other, in this case
@@ -594,14 +633,17 @@ def sort_vehicle_list(vehicle_list):
     return [vehicle for _, vehicle in sorted(zip(distances, vehicle_list))]
 
 
-def merge_platoons(p1, p2):
+def merge_platoons(p1, p2, lane_change=False):
     """
     Creates a new platoon from the two that merge and starts its merge
     maneuver, which is managed by the new Platoon object
     :param p1: one of the platoons that merge
     :param p2: the other platoon that merge
+    :param lane_change: whether one of the platoons has to change its lane at
+    the beginning of the maneuver
     :type p1: Platoon
     :type p2: Platoon
+    :type lane_change: bool
     :return: the new platoon
     :rtype: Platoon
     """
@@ -609,7 +651,8 @@ def merge_platoons(p1, p2):
     vehicle_list.extend(p1.get_members())
     vehicle_list.extend(p2.get_members())
 
-    return Platoon(sort_vehicle_list(vehicle_list), cacc_spacing=p1.get_cacc_spacing(), merging=True)
+    return Platoon(sort_vehicle_list(vehicle_list), cacc_spacing=p1.get_cacc_spacing(), merging=True,
+                   lane_change=lane_change)
 
 
 def all_edges_in_all_routes(edges, routes):
@@ -637,7 +680,10 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
     """
     Checks for the nearest platoon that can merge with each platoon. The merge
     candidate platoons are those that are closer than a maximum distance and
-    placed on edges that are in the route of the platoon looking for a merge
+    placed on edges that are in the route of the platoon looking for a merge.
+    Those candidates are discarded if there are other vehicles that represent
+    an obstacle for the merge maneuver. This function also checks if it is
+    necessary to perform a lane change at the beginning of the merge maneuver.
     :param platoons: list of platoons of the simulation
     :param max_distance: maximum distance to check for platoons that can merge
     :param max_platoon_length: maximum platoon length allowed in vehicles
@@ -651,6 +697,7 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
     :rtype: list[int]
     """
     merges = [-1] * len(platoons)
+    lane_changes = [False] * len(platoons)
 
     for i in range(len(platoons) - 1):
         if platoons[i].is_splitting():
@@ -662,6 +709,7 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
         min_distance = max_distance
         index = -1
         l1 = platoons[i].length()
+        speed_1 = traci.vehicle.getSpeed(platoons[i].get_leader())
         max_speed_1 = traci.vehicle.getMaxSpeed(platoons[i].get_leader())
         allowed_speed_1 = traci.vehicle.getAllowedSpeed(platoons[i].get_leader())
         lane_1 = platoons[i].get_desired_lane()
@@ -678,9 +726,17 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
             if platoons[j].leader_wants_to_leave(edge_filter) and platoons[j].length() == 1:
                 continue
 
+            distance = abs(platoons[i].distance_to(platoons[j]))
+            if distance >= min_distance:
+                continue
+
+            speed_2 = traci.vehicle.getSpeed(platoons[j].get_leader())
             max_speed_2 = traci.vehicle.getMaxSpeed(platoons[j].get_leader())
             allowed_speed_2 = traci.vehicle.getAllowedSpeed(platoons[j].get_leader())
             if max_speed_1 < allowed_speed_2 or max_speed_2 < allowed_speed_1:
+                continue
+
+            if abs(speed_1 - speed_2) > 0.1 * max(speed_1, speed_2):
                 continue
 
             neighbor_edges_list = platoons[j].get_edges_list()
@@ -696,11 +752,13 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
             lane_ids = [lane_id_1, lane_id_2]
             desired_lane = max(lanes) if max_speed_1 > 0.9 * road_max_speed else min(lanes)
             desired_lane_id = lane_ids[lanes.index(desired_lane)]
+            non_desired_lane_id = lane_id_1 if desired_lane == lane_2 else lane_id_2
             vehicles_in_lane = traci.lane.getLastStepVehicleIDs(desired_lane_id)
 
             max_pos = traci.vehicle.getLanePosition(first_of(platoons[i].get_members() + platoons[j].get_members()))
             l = platoons[i].length_sum() + platoons[j].length_sum() + (l1 + l2 + 1) * platoons[i].get_cacc_spacing()
-            min_pos = max_pos - l
+            min_pos = min(max_pos - l, platoons[i].get_tail_position() - platoons[i].get_cacc_spacing(),
+                          platoons[j].get_tail_position() - platoons[i].get_cacc_spacing())
 
             obstacle_vehicle = False
             for vehicle in vehicles_in_lane:
@@ -711,15 +769,35 @@ def look_for_merges(platoons, max_distance, max_platoon_length, edge_filter):
             if obstacle_vehicle:
                 continue
 
-            distance = abs(platoons[i].distance_to(platoons[j]))
-            if distance < min_distance:
-                min_distance = distance
-                index = j
+            change_lane = False
+            overlapping = platoons[i].get_head_position() > platoons[j].get_tail_position()
+            overlapping = overlapping and platoons[j].get_head_position() > platoons[i].get_tail_position()
+            if not overlapping:
+                p1 = traci.vehicle.getLanePosition(platoons[i].get_leader())
+                p2 = traci.vehicle.getLanePosition(platoons[j].get_leader())
+
+                vehicles_in_lane = traci.lane.getLastStepVehicleIDs(non_desired_lane_id)
+                for vehicle in vehicles_in_lane:
+                    pos = traci.vehicle.getLanePosition(vehicle)
+                    # If the two platoons are not place one next to the other,
+                    # one of them has to catch up the other. If there is a
+                    # vehicle in the same lane than the platoon that has to
+                    # change its lane it is safer to perform the lane change
+                    # at the beginning of the merge maneuver (there are no
+                    # obstacles for this lane change since it has been checked
+                    # before)
+                    if min(p1, p2) < pos < max(p1, p2) and vehicle not in platoons[i] and vehicle not in platoons[j]:
+                        change_lane = True
+
+            min_distance = distance
+            index = j
+
+            lane_changes[i] = True if change_lane else False
 
         if index != -1:
             merges[i] = index
 
-    return merges
+    return merges, lane_changes
 
 
 def it_is_safe_to_change_lane(vehicle, lane_id, safe_gap):

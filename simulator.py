@@ -88,26 +88,23 @@ def main():
             if platoon.leader_wants_to_leave(edge_filter):
                 platoon.leader_leave()
 
-        while True:
-            merges = platooning.look_for_merges(platoons, max_distance=args.max_distance,
-                                                max_platoon_length=args.platoon_length, edge_filter=edge_filter)
+        merges, lane_changes = platooning.look_for_merges(platoons, max_distance=args.max_distance,
+                                                          max_platoon_length=args.platoon_length,
+                                                          edge_filter=edge_filter)
 
-            new_platoons = []
-            platoons_to_remove = set()
-            for i in range(len(merges)):
-                if merges[i] != -1:
-                    new_platoons.append(platooning.merge_platoons(platoons[i], platoons[merges[i]]))
-                    platoons_to_remove.add(platoons[i])
-                    platoons_to_remove.add(platoons[merges[i]])
+        new_platoons = []
+        platoons_to_remove = set()
+        for i in range(len(merges)):
+            if merges[i] != -1:
+                new_platoons.append(platooning.merge_platoons(platoons[i], platoons[merges[i]], lane_changes[i]))
+                platoons_to_remove.add(platoons[i])
+                platoons_to_remove.add(platoons[merges[i]])
 
-            platoons.extend(new_platoons)
-            platoons = [platoon for platoon in platoons if platoon not in platoons_to_remove]
-
-            if all([x == -1 for x in merges]):
-                break
+        platoons.extend(new_platoons)
+        platoons = [platoon for platoon in platoons if platoon not in platoons_to_remove]
 
         for platoon in platoons:
-            platoon.update_desired_speed()
+            platoon.update_desired_speed_and_lane()
             platoon.communicate()
             platoon.maneuver()
 
