@@ -13,6 +13,6 @@ In order to use PERMIT, Python and Plexe-SUMO are needed. The code of Plexe-SUMO
 
 If you use PERMIT for your research please cite our work:
 
->J. Mena and J. Gozalvez, "PERMIT - A sumo simulator for platooning maneuvers in mixed traffic scenarios," accepted for the *21st International Conference on Intelligent Transportation Systems (IEEE ITSC)*.
+>J. Mena and J. Gozalvez, "PERMIT - A sumo simulator for platooning maneuvers in mixed traffic scenarios," in *Proc of the 21st International Conference on Intelligent Transportation Systems (IEEE ITSC 2018)*, 4-7 November, 2018, Maui, HI, USA, pp. 3445-3450.
 
 The code for PERMIT takes as a starting point the Plexe Python demos that can be found in [this repository](https://github.com/michele-segata/plexe-python-demo). PERMIT is released under a LGPL 3.0 open-source license. A copy of the LGPL 3.0 license can be found in this repository.
