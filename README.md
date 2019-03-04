@@ -9,7 +9,7 @@ PERMIT can be used with an existent Plexe scenario without the need of making an
 
 	python simulator.py -c plexe_scenario.sumo.cfg
 
-In order to use PERMIT, Python and Plexe-SUMO are needed. The code of Plexe-SUMO can be found in [this repository](https://github.com/michele-segata/sumo/tree/plexe-sumo-0.32.0).
+In order to use PERMIT, Python and Plexe-SUMO are needed. The code of Plexe-SUMO can be found in [this repository](https://github.com/susomena/plexe-sumo).
 
 If you use PERMIT for your research please cite our work:
 
