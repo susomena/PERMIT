@@ -1,0 +1,10 @@
+<connections>
+	<connection from="0to1" to="1to2" fromLane="0" toLane="0"/>
+	<connection from="0to1" to="1to2" fromLane="1" toLane="1"/>
+	<connection from="1to2" to="2to3" fromLane="0" toLane="0"/>
+	<connection from="1to2" to="2to3" fromLane="1" toLane="1"/>
+	<connection from="1to2" to="2to5" fromLane="0" toLane="0"/>
+	<connection from="1to2" to="2to5" fromLane="1" toLane="1"/>
+	<connection from="2to3" to="3to4" fromLane="0" toLane="0"/>
+	<connection from="2to3" to="3to4" fromLane="1" toLane="1"/>
+</connections>

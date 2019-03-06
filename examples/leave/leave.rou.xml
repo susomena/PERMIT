@@ -1,0 +1,19 @@
+<routes>
+	<vType id="type1">
+		<carFollowing-CC tauEngine="0.5" omegaN="0.2" xi="1" c1="0.5" decel="9" lanesCount="4" ccAccel="1.5"/>
+	</vType>
+
+	<vType id="type2">
+		<carFollowing-CC tauEngine="0.5" omegaN="0.2" xi="1" c1="0.5" decel="9" lanesCount="4" ccAccel="1.5"/>
+	</vType>
+
+	<route id="route0" edges="0to1 1to2 2to3"/>
+	<route id="route1" edges="0to1 1to2 2to5"/>
+
+	<vehicle id="car0" route="route0" depart="0.0" type="type1" departSpeed="max" departLane="0"/>
+	<vehicle id="car1" route="route0" depart="0.2" type="type2" departSpeed="max" departLane="1"/>
+	<vehicle id="car2" route="route1" depart="0.4" type="type1" departSpeed="max" departLane="0"/>
+	<vehicle id="car3" route="route0" depart="0.6" type="type2" departSpeed="max" departLane="1"/>
+	<vehicle id="car4" route="route0" depart="0.8" type="type1" departSpeed="max" departLane="0"/>
+	<vehicle id="car5" route="route0" depart="1.0" type="type2" departSpeed="max" departLane="1"/>
+</routes>
